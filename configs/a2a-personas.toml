@@ -1,0 +1,54 @@
+# A2A self-play — LLM seller strategy vs LLM buyer persona.
+#
+# Run with:  uv run rfq-bench run --config configs/a2a-personas.toml
+# Score with: uv run rfq-bench report    --traces results/a2a_v0.jsonl
+#             uv run rfq-bench dashboard --traces results/a2a_v0.jsonl
+#
+# Requires an OpenAI-compatible endpoint in .env (OPENAI_BASE_URL, OPENAI_API_KEY,
+# RFQ_BENCH_MODEL). NOTE: --agent a2a makes TWO live API calls per round (buyer +
+# seller), so cost is ~2x an --agent llm run — this matrix is kept small on purpose.
+#
+# The matrix below is scenarios x strategies x personas x first-speakers x seeds
+# = 2 x 3 x 5 x 1 x 1 = 30 episodes (buyer always opens; rounds capped at 8).
+# Keep `control` in strategies and `neutral` in personas: they are the baselines
+# the report's two Δ tables (seller strategy, buyer persona) compare against.
+#
+# The buyer personas are defined by markdown files in prompts/personas/ (cost_focused,
+# total_value, reliability_first, relationship_focused), written to the scenarios'
+# actual issues (price / delivery / warranty). The shared buyer instruction is
+# prompts/system_buyer.md. `neutral` is the built-in Δ baseline.
+
+[run]
+agent       = "a2a"                       # LLM buyer persona vs LLM seller strategy
+
+# One single-issue and one multi-issue scenario to exercise both outcome spaces.
+scenarios   = ["single_price_a", "multi_pdw_a"]
+
+# Seller side (the scored treatment). `control` is the Δ baseline.
+strategies  = ["control", "boulware", "anchoring"]
+
+# Buyer side (the opponent axis). `neutral` (built-in) is the buyer-Δ baseline;
+# the rest are the markdown personas in prompts/personas/.
+personas    = ["neutral", "cost_focused", "total_value", "reliability_first", "relationship_focused"]
+
+first_speakers = ["buyer"]                # COST: the customer (buyer) always opens; drops the
+                                          # opening-order mirror. Halves the matrix (60 -> 30).
+seeds       = [0]                         # bump to [0, 1, 2] once you trust the setup
+max_rounds  = 8                           # COST: caps rounds/episode (deadlines are 12/16),
+                                          # ~halving calls. Changes outcomes — not comparable
+                                          # to a full-deadline run; remove for final numbers.
+concurrency = 6                           # episodes in parallel (stagger auto-ramps starts)
+retries     = 2                           # re-attempt transient API/network failures
+overwrite   = true                        # fresh run each time
+# Matrix: 2 scenarios x 3 strategies x 5 personas x 1 first-speaker x 1 seed = 30 episodes.
+# Further cuts if needed: trim scenarios/strategies. Lowering RFQ_BENCH_MAX_TOKENS helps
+# little — the tool-call replies are already short.
+
+out           = "results/a2a_v0.jsonl"    # separate file; never mixes with the offline suite
+dashboard     = true                      # rebuild the dashboard from this run
+dashboard_out = "results/a2a_dashboard.html"
+
+[dashboard]
+control = "control"                       # seller-side Δ baseline (buyer side uses `neutral`)
+n_boot  = 2000                            # bootstrap resamples for CIs
+seed    = 0                               # reproducible CIs

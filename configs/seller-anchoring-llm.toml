@@ -1,0 +1,11 @@
+# rfq-bench configuration.
+# Auto-discovered as ./rfq-bench.toml, or pass --config <path>.
+# Precedence at run time: explicit CLI flags > this file > built-in defaults.
+
+[run]
+scenarios   = ["single_price_a", "no_zopa_price"]
+strategies  = ["anchoring", "boulware"]
+roles       = ["seller"]        # the tested agent plays the seller side
+agent       = "llm"
+concurrency = 10                 # stagger auto-ramps parallel starts (--stagger to tune)
+overwrite   = true              # truncate the output file before writing

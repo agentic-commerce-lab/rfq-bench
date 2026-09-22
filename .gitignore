@@ -1,0 +1,17 @@
+# Environments
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Secrets
+.env
+
+# Run outputs — traces are written here; never edited by hand.
+results/
+!results/.gitkeep
+
+# OS
+.DS_Store

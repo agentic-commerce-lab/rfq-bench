@@ -1,0 +1,38 @@
+# Laya decision-model agent — FULL matrix, seller side, all strategies & buyers.
+#
+# Run with:  uv run rfq-bench run --config configs/laya-full.toml
+# Score with: uv run rfq-bench report    --traces results/laya_full.jsonl
+#             uv run rfq-bench dashboard --traces results/laya_full.jsonl
+#
+# Requires the local Laya server (English checkpoint) — see .env RFQ_BENCH_LAYA_URL.
+# Laya is local + deterministic, so this is free and reproducible; only slow-ish
+# because the server serves one forward pass at a time (concurrency is pinned to 1).
+#
+# Laya plays the SELLER, picking its own offer (one choice per issue) and deciding
+# accept/walk; each strategy is injected as guidance text it reads. Every combination
+# against the scripted ("offline") buyers:
+#   scenarios x strategies x opponents x first-speakers x seeds
+#   = 5 x 7 x 4 x 2 x 1 = 280, minus logrolling on the 3 single-issue scenarios (24)
+#   = 256 episodes. `control` is present, so Δ vs control is defined per strategy.
+
+[run]
+agent       = "laya"
+roles       = ["seller"]        # Laya is the seller; the scripted opponents are the buyers
+# scenarios, strategies, opponents, first_speakers left UNSET = all of each:
+#   scenarios  = all in data/scenarios (2 single, 2 multi, 1 no-ZOPA)
+#   strategies = control, boulware, linear, conceder, tit_for_tat, anchoring, logrolling
+#   opponents  = hardliner, fast_conceder, reciprocal, integrative
+#   first_speakers = buyer, seller
+seeds       = [0]               # Laya is deterministic; one seed suffices
+concurrency = 1                 # the Laya server serves one forward pass at a time
+retries     = 2
+overwrite   = true
+
+out           = "results/laya_full.jsonl"
+dashboard     = true
+dashboard_out = "results/laya_full_dashboard.html"
+
+[dashboard]
+control = "control"             # Δ vs the control strategy (Laya-driven accept/walk on it)
+n_boot  = 2000
+seed    = 0

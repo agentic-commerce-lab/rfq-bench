@@ -1,0 +1,36 @@
+# A2A self-play SMOKE test — smallest useful LLM-vs-LLM run (8 episodes).
+#
+# Run with:  uv run rfq-bench run --config configs/a2a-smoke.toml
+# Score with: uv run rfq-bench report    --traces results/a2a_smoke.jsonl
+#             uv run rfq-bench dashboard --traces results/a2a_smoke.jsonl
+#
+# Use this to confirm the endpoint, tool-calling, and both report tables work
+# before spending on the larger configs/a2a-personas.toml. Requires an
+# OpenAI-compatible endpoint in .env. NOTE: --agent a2a makes TWO live API calls
+# per round (buyer + seller).
+#
+# Matrix: scenarios x strategies x personas x first-speakers x seeds
+#       = 1 x 2 x 2 x 2 x 1 = 8 episodes (<= 10).
+# `control` (strategy) and `neutral` (persona) are the two Δ baselines — keep them.
+
+[run]
+agent       = "a2a"
+
+scenarios   = ["single_price_a"]          # one single-issue scenario (fast, hand-checkable)
+strategies  = ["control", "boulware"]     # seller side; `control` = seller Δ baseline
+personas    = ["neutral", "hardball"]     # buyer side; `neutral` = buyer Δ baseline
+seeds       = [0]
+
+max_rounds  = 6                           # cap rounds/episode to keep LLM calls (and cost) low
+concurrency = 4                           # 8 episodes, a few in parallel
+retries     = 2
+overwrite   = true
+
+out           = "results/a2a_smoke.jsonl" # own file; never touches a2a_v0.jsonl / the offline suite
+dashboard     = true
+dashboard_out = "results/a2a_smoke_dashboard.html"
+
+[dashboard]
+control = "control"                       # seller-side Δ baseline (buyer side uses `neutral`)
+n_boot  = 2000
+seed    = 0

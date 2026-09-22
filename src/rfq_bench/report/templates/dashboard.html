@@ -1,0 +1,1113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>rfq-bench dashboard</title>
+<style>
+/* __UPLOT_CSS__ */
+</style>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1a1d21; --muted: #6b7280;
+  --line: #e5e7eb; --line-strong: #cbd1d9; --accent: #3b5bdb; --accent-soft: #edf0fd;
+  --pos: #2f9e44; --neg: #e03131; --warn: #f08c00; --chip: #eef1f5;
+  --heat-lo: #e03131; --heat-mid: #f8f9fa; --heat-hi: #2f9e44;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.1);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14161a; --panel: #1c1f24; --ink: #e6e8 eb; --ink: #e6e8eb; --muted: #9aa2ad;
+    --line: #2b2f36; --line-strong: #3a3f47; --accent: #748ffc; --accent-soft: #232838;
+    --pos: #51cf66; --neg: #ff6b6b; --warn: #ffb84d; --chip: #24282f;
+    --heat-lo: #ff6b6b; --heat-mid: #2a2e35; --heat-hi: #51cf66;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14161a; --panel: #1c1f24; --ink: #e6e8eb; --muted: #9aa2ad;
+  --line: #2b2f36; --line-strong: #3a3f47; --accent: #748ffc; --accent-soft: #232838;
+  --pos: #51cf66; --neg: #ff6b6b; --warn: #ffb84d; --chip: #24282f;
+  --heat-lo: #ff6b6b; --heat-mid: #2a2e35; --heat-hi: #51cf66;
+  --shadow: 0 1px 2px rgba(0,0,0,.4);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
+h2 { font-size: 15px; } h3 { font-size: 13px; color: var(--muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em; }
+a { color: var(--accent); }
+.wrap { max-width: 1280px; margin: 0 auto; padding-inline: 20px; padding-block: 20px; }
+header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; }
+header.top .sub { color: var(--muted); font-size: 12.5px; }
+header.top .spacer { flex: 1; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: var(--shadow); padding: 16px; margin-top: 16px; }
+.panel > .head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.panel > .head .spacer { flex: 1; }
+.hint { color: var(--muted); font-size: 12px; }
+button, select { font: inherit; color: inherit; }
+.btn { background: var(--chip); border: 1px solid var(--line); border-radius: 8px;
+  padding: 5px 10px; cursor: pointer; }
+.btn:hover { border-color: var(--line-strong); }
+.btn.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.toggle button { background: var(--panel); border: 0; padding: 5px 11px; cursor: pointer; color: var(--muted); }
+.toggle button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+/* filter bar */
+.filters { display: flex; flex-wrap: wrap; gap: 14px; }
+.fgroup { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.fgroup .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--panel); cursor: pointer; font-size: 12.5px; user-select: none; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* tables */
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em;
+  cursor: default; position: sticky; top: 0; background: var(--panel); }
+th.sortable { cursor: pointer; } th.sortable:hover { color: var(--ink); }
+tbody tr.control td { font-weight: 600; }
+tbody tr.clickable { cursor: pointer; }
+tbody tr.clickable:hover { background: var(--accent-soft); }
+tbody tr.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.num { font-variant-numeric: tabular-nums; }
+.pos { color: var(--pos); } .neg { color: var(--neg); } .muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 12px; }
+.ci { color: var(--muted); font-size: 12px; }
+
+/* badges */
+.badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11.5px;
+  border: 1px solid transparent; }
+.badge.agreement { background: color-mix(in srgb, var(--pos) 16%, transparent); color: var(--pos); }
+.badge.no_deal { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.badge.walk_away { background: color-mix(in srgb, var(--neg) 15%, transparent); color: var(--neg); }
+.badge.role { background: var(--chip); color: var(--muted); }
+.flag { font-size: 11px; padding: 0 5px; border-radius: 4px; margin-left: 3px; }
+.flag.ok { color: var(--pos); } .flag.bad { color: var(--neg); }
+
+/* forest plot */
+.forest-row { display: grid; grid-template-columns: 120px 62px 1fr; align-items: center; gap: 8px;
+  padding: 3px 0; }
+.forest-row .name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+.forest-row .dval { text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+
+/* two-column layout */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+
+/* heatmap */
+.heat { border-collapse: separate; border-spacing: 2px; }
+.heat td.cell { text-align: center; color: #10141a; font-weight: 600; border-radius: 6px;
+  cursor: pointer; min-width: 54px; font-variant-numeric: tabular-nums; }
+.heat td.cell.dim { opacity: .28; }
+.heat td.cell.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
+.heat th { position: static; text-transform: none; letter-spacing: 0; font-size: 12px; }
+.heat td.rowhead { text-align: right; color: var(--ink); font-weight: 600; font-size: 12.5px; }
+
+/* episode list scroll */
+.scroll { max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.scroll table { border-collapse: separate; border-spacing: 0; }
+
+/* replay */
+.replay-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .replay-grid { grid-template-columns: 1fr; } }
+.uholder { width: 100%; }
+.transport { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.transport input[type=range] { flex: 1; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 13px; }
+.kv .k { color: var(--muted); } .kv .v { text-align: right; font-variant-numeric: tabular-nums; }
+.qform { background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; margin-top: 10px;
+  font-family: var(--mono); font-size: 12.5px; }
+.log { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px;
+  margin-top: 10px; }
+.log table td { padding: 4px 8px; font-size: 12.5px; border-bottom: 1px solid var(--line);
+  vertical-align: top; }
+.log tr.past td { color: var(--muted); }
+.log tr.now td { background: var(--accent-soft); font-weight: 600; }
+.log tr.future td { opacity: .55; }
+.log .say { font-weight: 400; color: var(--ink); font-style: italic; margin-top: 2px;
+  white-space: normal; max-width: 340px; }
+.log .say::before { content: "“"; } .log .say::after { content: "”"; }
+.log tr.past .say { color: var(--muted); }
+.fallback-tag { font-style: normal; font-size: 10.5px; font-weight: 600; color: var(--warn);
+  border: 1px solid var(--warn); border-radius: 4px; padding: 0 4px; margin-left: 6px;
+  vertical-align: middle; }
+.log .override { font-style: normal; margin-top: 3px; font-size: 11.5px; color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, transparent); border-left: 2px solid var(--warn);
+  padding: 3px 6px; border-radius: 0 4px 4px 0; max-width: 340px; white-space: normal; }
+.log .override b { color: var(--warn); }
+.log .override .played { color: var(--muted); }
+.log .override.err { color: #c0392b; border-left-color: #c0392b;
+  background: color-mix(in srgb, #c0392b 10%, transparent); }
+.coststats { display: flex; flex-wrap: wrap; gap: 10px; }
+.stat { background: var(--accent-soft); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 12px; min-width: 120px; flex: 1 1 130px; }
+.statk { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.statv { font-size: 18px; font-weight: 600; margin-top: 2px; }
+#costTable td.num, #costTable th { text-align: right; }
+#costTable td:first-child, #costTable th:first-child { text-align: left; }
+.override-banner { font-size: 12px; color: var(--warn); margin: 2px 0 8px;
+  border: 1px solid var(--warn); border-radius: 6px; padding: 6px 10px;
+  background: color-mix(in srgb, var(--warn) 8%, transparent); }
+/* speech bubble for the current step's message */
+.nowmsg { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px;
+  min-height: 20px; }
+.nowmsg .who { font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  color: #fff; background: var(--accent); border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+.nowmsg .who.seller { background: var(--warn); }
+.nowmsg .bubble { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  border-top-left-radius: 2px; padding: 8px 12px; font-size: 13.5px; flex: 1; box-shadow: var(--shadow); }
+.nowmsg .bubble.none { color: var(--muted); font-style: italic; border-style: dashed; box-shadow: none; }
+.nowmsg .bubble .act { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+.llm-detail { margin-top: 6px; }
+.llm-detail summary { cursor: pointer; font-size: 11.5px; color: var(--accent); user-select: none;
+  list-style: none; }
+.llm-detail summary::before { content: "▸ "; }
+.llm-detail[open] summary::before { content: "▾ "; }
+.llm-detail summary:hover { text-decoration: underline; }
+.llm-pre { margin: 4px 0 0; padding: 8px 10px; background: rgba(127,127,127,.10);
+  border: 1px solid var(--line); border-radius: 6px; font-family: var(--mono); font-size: 11.5px;
+  line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 280px; overflow: auto; }
+.empty { color: var(--muted); padding: 24px; text-align: center; }
+.banner { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 8px;
+  padding: 7px 11px; font-size: 12.5px; margin-bottom: 10px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 6px; }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+  margin-right: 5px; vertical-align: middle; background: var(--sw, #888); }
+.pill { font-size: 11px; padding: 1px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
+.uplot { font-family: system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<script id="payload" type="application/json">__RFQ_BENCH_PAYLOAD__</script>
+<script>/* __UPLOT_JS__ */</script>
+
+<div class="wrap">
+  <header class="top">
+    <h1>rfq-bench</h1>
+    <span class="sub" id="metaline"></span>
+    <span class="spacer"></span>
+    <button class="btn" id="themeBtn" title="Toggle theme">◐ theme</button>
+  </header>
+
+  <!-- FILTERS -->
+  <section class="panel">
+    <div class="head">
+      <h2>Filters</h2>
+      <span class="hint" id="filterCount"></span>
+      <span class="spacer"></span>
+      <button class="btn" id="resetBtn">Reset</button>
+    </div>
+    <div class="filters" id="filters"></div>
+  </section>
+
+  <div class="cols">
+    <!-- LEADERBOARD -->
+    <section class="panel">
+      <div class="head">
+        <h2 id="boardTitle">Strategy effect Δ vs control</h2>
+        <span class="spacer"></span>
+        <span class="hint" id="sideLabel" hidden>scored side:</span>
+        <div class="toggle" id="sideToggle" hidden>
+          <button data-side="seller" class="active">seller (strategy)</button>
+          <button data-side="buyer">buyer (persona)</button>
+        </div>
+        <span class="hint">95% CI clustered by scenario · bootstrap in-browser</span>
+      </div>
+      <div id="ctlNote" class="banner" hidden></div>
+      <div id="forest"></div>
+      <div style="overflow:auto; margin-top:8px">
+        <table id="leaderboard">
+          <thead><tr>
+            <th class="sortable" data-k="strategy">strategy</th>
+            <th class="sortable" data-k="score">S_s</th>
+            <th class="sortable" data-k="delta">Δ</th>
+            <th>95% CI</th>
+            <th class="sortable" data-k="n">n</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SEPARATE TRACKS -->
+    <section class="panel">
+      <div class="head">
+        <h2>Separate tracks</h2>
+        <span class="hint">reported alongside — never folded into the score</span>
+      </div>
+      <div style="overflow:auto">
+        <table id="tracks">
+          <thead><tr>
+            <th class="sortable" data-k="strategy">strategy</th>
+            <th class="sortable" data-k="agree">agree%</th>
+            <th class="sortable" data-k="joint">joint</th>
+            <th class="sortable" data-k="pareto">pareto%</th>
+            <th class="sortable" data-k="rounds">rounds</th>
+            <th class="sortable" data-k="walk">walk✓</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="hint" style="margin:10px 2px 0">
+        joint = mean joint surplus above BATNAs · pareto% over agreements ·
+        walk✓ = correct no-deal on no-ZOPA cases
+      </p>
+    </section>
+  </div>
+
+  <!-- COST OVERVIEW -->
+  <section class="panel" id="costPanel" hidden>
+    <div class="head">
+      <h2>Cost overview</h2>
+      <span class="hint" id="costHint"></span>
+    </div>
+    <div id="costStats" class="coststats"></div>
+    <div style="overflow:auto; margin-top:12px">
+      <table id="costTable">
+        <thead><tr>
+          <th>breakdown</th><th>episodes</th><th>tokens</th><th>total&nbsp;$</th><th>$/episode</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="hint" style="margin:10px 2px 0" id="costNote"></p>
+  </section>
+
+  <!-- HEATMAP -->
+  <section class="panel">
+    <div class="head">
+      <h2>Mean q by cell</h2>
+      <span class="spacer"></span>
+      <span class="hint">columns:</span>
+      <div class="toggle" id="heatToggle">
+        <button data-dim="opponent" class="active">opponent</button>
+        <button data-dim="scenario_id">scenario</button>
+        <button data-dim="target_role">role</button>
+      </div>
+    </div>
+    <div style="overflow:auto"><div id="heatmap"></div></div>
+    <div class="hint" style="margin-top:8px">Click a cell to filter the episodes below to that strategy × column.</div>
+  </section>
+
+  <!-- EPISODES -->
+  <section class="panel">
+    <div class="head">
+      <h2>Episodes</h2>
+      <span class="hint" id="episodeCount"></span>
+      <span class="spacer"></span>
+      <span id="cellFilter"></span>
+      <input id="episodeSearch" class="btn" placeholder="search…" style="min-width:140px" />
+    </div>
+    <div class="scroll">
+      <table id="episodes">
+        <thead><tr>
+          <th class="sortable" data-k="strategy">strategy</th>
+          <th class="sortable" data-k="opponent">opponent</th>
+          <th class="sortable" data-k="scenario_id">scenario</th>
+          <th class="sortable" data-k="target_role">role</th>
+          <th class="sortable" data-k="first_speaker">opens</th>
+          <th class="sortable" data-k="seed">seed</th>
+          <th class="sortable" data-k="outcome_kind">outcome</th>
+          <th class="sortable" data-k="q">q</th>
+          <th class="sortable" data-k="ub">u·buy</th>
+          <th class="sortable" data-k="us">u·sell</th>
+          <th class="sortable" data-k="rounds_to_close">rounds</th>
+          <th>valid</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- REPLAY -->
+  <section class="panel">
+    <div class="head">
+      <h2>Negotiation replay</h2>
+      <span class="hint" id="replayTitle">select an episode above</span>
+    </div>
+    <div id="replayBody"><div class="empty">Pick an episode to replay its round-by-round offers.</div></div>
+  </section>
+
+  <footer class="hint" style="text-align:center; margin:22px 0 8px">
+    Charts by <span class="mono">uPlot</span> (vendored, MIT) · scores from the Python kernel · aggregates recomputed live.
+  </footer>
+</div>
+
+<script>
+"use strict";
+const DATA = JSON.parse(document.getElementById("payload").textContent);
+const META = DATA.meta, SCEN = DATA.scenarios, EPS = DATA.episodes;
+const $ = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+const fmt = (x, d=1) => (x==null || Number.isNaN(x)) ? "—" : x.toFixed(d);
+const pct = (x, d=0) => (x==null || Number.isNaN(x)) ? "—" : (100*x).toFixed(d)+"%";
+const signed = (x, d=1) => (x==null||Number.isNaN(x)) ? "—" : (x>=0?"+":"")+x.toFixed(d);
+
+/* ---------- theme ---------- */
+(function(){
+  const KEY="rfqbench-theme"; let cur=null;
+  try { cur = localStorage.getItem(KEY); } catch(e){}
+  if (cur) document.documentElement.setAttribute("data-theme", cur);
+  $("#themeBtn").onclick = () => {
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+    const now = document.documentElement.getAttribute("data-theme");
+    const next = now ? (now==="dark"?"light":"dark") : (dark?"light":"dark");
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+    renderAll();
+  };
+})();
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* ---------- deterministic PRNG (mulberry32) for the bootstrap ---------- */
+function mulberry32(seed){
+  let a = seed >>> 0;
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function percentile(sorted, p){
+  if (!sorted.length) return NaN;
+  const idx = (p/100)*(sorted.length-1);
+  const lo = Math.floor(idx), hi = Math.ceil(idx);
+  if (lo===hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi]-sorted[lo])*(idx-lo);
+}
+const mean = a => a.length ? a.reduce((s,x)=>s+x,0)/a.length : NaN;
+
+/* group scorable q by scenario, for one subset of episodes */
+function byScenario(eps){
+  const g = {};
+  for (const e of eps){ const q=qOf(e); if (q!=null && !degenOf(e)) (g[e.scenario_id] ||= []).push(q); }
+  return g;
+}
+/* 95% CI of Δ (arm - control) means, resampling scenarios with replacement */
+function bootstrapDelta(arm, ctl){
+  const scens = Object.keys(arm).filter(s => s in ctl).sort();
+  if (!scens.length) return [NaN, NaN];
+  const rng = mulberry32(META.seed >>> 0 || 1);
+  const n = scens.length, deltas = new Float64Array(META.n_boot);
+  for (let b=0; b<META.n_boot; b++){
+    let as=0, ac=0, na=0, nc=0;
+    for (let j=0; j<n; j++){
+      const s = scens[(rng()*n)|0];
+      const av = arm[s], cv = ctl[s];
+      for (const v of av){ as+=v; na++; }
+      for (const v of cv){ ac+=v; nc++; }
+    }
+    deltas[b] = 100*((as/na)-(ac/nc));
+  }
+  const sorted = Array.from(deltas).sort((x,y)=>x-y);
+  return [percentile(sorted,2.5), percentile(sorted,97.5)];
+}
+
+/* ---------- side metrics (mirror report/metrics.py, exact) ---------- */
+/* Each scenario ships every outcome's {buyer,seller} utility, so joint surplus
+   and the pareto column are computed exactly here — the same numbers as
+   rfq-bench report. pareto% = share of agreements on the Pareto frontier
+   (no other outcome dominates them); higher is better. */
+function paretoEfficient(sc, ub, us){
+  for (const o of sc.outcomes){
+    if (o.buyer >= ub && o.seller >= us && (o.buyer > ub || o.seller > us)) return false;
+  }
+  return true;
+}
+
+/* ---------- filter state ---------- */
+const DIMS = {
+  opponent: META.opponents, scenario_id: META.scenarios,
+  target_role: META.roles, first_speaker: META.first_speakers,
+  seed: META.seeds.map(String),
+};
+const DIM_LABEL = { opponent:"opponent", scenario_id:"scenario", target_role:"role",
+  first_speaker:"first speaker", seed:"seed" };
+const active = {}; for (const k in DIMS) active[k] = new Set(DIMS[k]);
+let cellFilter = null; // {strategy, dim, value}
+let heatDim = "opponent";
+// A2A self-play scores both sides. "seller" = the treatment (arm = strategy);
+// "buyer" = the persona view (arm = opponent/persona, q = the buyer's captured
+// value, control = the baseline persona). All aggregates route through these.
+let scoredSide = "seller";
+const isBuyerSide = () => scoredSide === "buyer";
+const qOf = e => isBuyerSide() ? e.q_buyer : e.q;
+const degenOf = e => isBuyerSide() ? e.q_buyer_degenerate : e.degenerate;
+const armOf = e => isBuyerSide() ? e.opponent : e.strategy;
+const controlName = () => isBuyerSide() ? META.buyer_control : META.control;
+let selectedEpisode = null;
+let episodeSort = {k:"q", dir:-1};
+let boardSort = {k:"delta", dir:-1};
+let trackSort = {k:"strategy", dir:1};
+let searchTerm = "";
+
+function passFilters(e){
+  for (const k in active){
+    const v = k==="seed" ? String(e.seed) : e[k];
+    if (!active[k].has(v)) return false;
+  }
+  return true;
+}
+function filteredEpisodes(){ return EPS.filter(passFilters); }
+
+/* ---------- meta line + filters UI ---------- */
+$("#metaline").textContent =
+  `${META.n_episodes} episodes · ${META.n_degenerate} degenerate excluded · ` +
+  `control = "${META.control}" · model ${META.models.join(", ")} · ${META.generated_at}` +
+  (META.source ? ` · ${META.source}` : "");
+
+function buildFilters(){
+  const host = $("#filters"); host.innerHTML = "";
+  for (const k of Object.keys(DIMS)){
+    const g = document.createElement("div"); g.className="fgroup";
+    g.innerHTML = `<span class="lbl">${DIM_LABEL[k]}</span>`;
+    const chips = document.createElement("div"); chips.className="chips";
+    for (const v of DIMS[k]){
+      const c = document.createElement("button");
+      c.className="chip"; c.textContent=v;
+      c.setAttribute("aria-pressed", active[k].has(v));
+      c.onclick = () => {
+        if (active[k].has(v)) active[k].delete(v); else active[k].add(v);
+        if (active[k].size===0) active[k]=new Set(DIMS[k]); // never empty
+        buildFilters(); renderAll();
+      };
+      chips.appendChild(c);
+    }
+    g.appendChild(chips); host.appendChild(g);
+  }
+}
+$("#resetBtn").onclick = () => {
+  for (const k in DIMS) active[k]=new Set(DIMS[k]);
+  cellFilter=null; searchTerm=""; $("#episodeSearch").value="";
+  buildFilters(); renderAll();
+};
+
+/* ---------- aggregates ---------- */
+function computeEffects(eps){
+  const strategies = [...new Set(eps.map(armOf))];
+  const control = controlName();
+  const ctlEps = eps.filter(e=>armOf(e)===control);
+  const ctlByScen = byScenario(ctlEps);
+  const rows = [];
+  for (const s of strategies){
+    const se = eps.filter(e=>armOf(e)===s);
+    const qs = se.filter(e=>qOf(e)!=null && !degenOf(e)).map(qOf);
+    const score = qs.length ? 100*mean(qs) : NaN;
+    let delta=null, ci=[null,null], control_score=NaN;
+    const armByScen = byScenario(se);
+    const matched = Object.keys(armByScen).filter(x=>x in ctlByScen).sort();
+    const matchedArm = matched.flatMap(x=>armByScen[x]);
+    const matchedCtl = matched.flatMap(x=>ctlByScen[x]);
+    control_score = matchedCtl.length ? 100*mean(matchedCtl) : NaN;
+    if (s===control){ delta=0; ci=[0,0]; }
+    else if (matchedArm.length && matchedCtl.length){
+      delta = 100*mean(matchedArm) - control_score;
+      ci = bootstrapDelta(armByScen, ctlByScen);
+    }
+    rows.push({strategy:s, score, delta, ci_low:ci[0], ci_high:ci[1], n:qs.length,
+      isControl:s===control});
+  }
+  rows.sort((a,b)=> (a.isControl!==b.isControl) ? (a.isControl?-1:1) : (b.delta-a.delta));
+  return rows;
+}
+
+function computeTracks(eps){
+  const strategies = [...new Set(eps.map(armOf))];
+  const out = {};
+  for (const s of strategies){
+    const se = eps.filter(e=>armOf(e)===s);
+    const agrees = se.filter(e=>e.agreement!=null);
+    const joint = agrees.map(e=>{
+      const sc = SCEN[e.scenario_id];
+      return (e.utilities.buyer - sc.parties.buyer.batna) + (e.utilities.seller - sc.parties.seller.batna);
+    });
+    const paretoFlags = agrees.map(e=>{
+      const sc = SCEN[e.scenario_id];
+      return paretoEfficient(sc, e.utilities.buyer, e.utilities.seller);
+    });
+    const walkCases = se.filter(e=> (e.outcome_kind==="walk_away"||e.outcome_kind==="no_deal")
+      && !SCEN[e.scenario_id].zopa_exists);
+    const walkOk = walkCases.filter(e=>e.validity && e.validity.correct_walk_away);
+    out[s] = {
+      strategy:s, n:se.length,
+      agree: se.length? agrees.length/se.length : 0,
+      joint: joint.length? mean(joint) : 0,
+      pareto: paretoFlags.length? paretoFlags.filter(Boolean).length/paretoFlags.length : 0,
+      rounds: se.length? mean(se.map(e=>e.rounds_to_close)) : 0,
+      walk: walkCases.length? walkOk.length/walkCases.length : NaN,
+    };
+  }
+  return out;
+}
+
+/* ---------- rendering ---------- */
+function renderAll(){
+  const eps = filteredEpisodes();
+  $("#filterCount").textContent = `${eps.length} of ${EPS.length} episodes selected`;
+  renderLeaderboard(eps);
+  renderTracks(eps);
+  renderCost(eps);
+  renderHeatmap(eps);
+  renderEpisodes(eps);
+  if (selectedEpisode) renderReplay(selectedEpisode);
+}
+
+function renderLeaderboard(eps){
+  // Δ is only defined when the control arm is in the (filtered) set.
+  const ctlHere = eps.some(e=>armOf(e)===controlName());
+  const note = $("#ctlNote");
+  if (note){
+    note.hidden = ctlHere;
+    if (!ctlHere) note.textContent =
+      `Control "${controlName()}" is not in the current selection — Δ vs control and its CI are undefined here (S_s still shown).`;
+  }
+  let rows = computeEffects(eps);
+  rows = sortRows(rows, boardSort, {strategy:r=>r.strategy});
+  // forest plot
+  const maxAbs = Math.max(2, ...rows.map(r=> Math.max(Math.abs(r.ci_low||0), Math.abs(r.ci_high||0), Math.abs(r.delta||0))));
+  const forest = $("#forest"); forest.innerHTML="";
+  for (const r of rows){
+    const row = document.createElement("div"); row.className="forest-row";
+    const bar = document.createElement("div");
+    bar.style.position="relative"; bar.style.height="16px";
+    const toPct = v => 50 + 50*(v/maxAbs);
+    const zero = 50;
+    const col = r.isControl ? cssVar("--muted") : (r.delta>=0 ? cssVar("--pos") : cssVar("--neg"));
+    let inner = `<div style="position:absolute;left:${zero}%;top:0;bottom:0;width:1px;background:var(--line-strong)"></div>`;
+    if (!r.isControl && r.ci_low!=null){
+      const a=toPct(r.ci_low), b=toPct(r.ci_high);
+      inner += `<div style="position:absolute;left:${Math.min(a,b)}%;width:${Math.abs(b-a)}%;top:7px;height:2px;background:${col};opacity:.5"></div>`;
+    }
+    if (r.delta!=null && !Number.isNaN(r.delta)){
+      const d = toPct(r.delta);
+      inner += `<div title="Δ ${signed(r.delta)}" style="position:absolute;left:calc(${d}% - 4px);top:4px;width:8px;height:8px;border-radius:50%;background:${col}"></div>`;
+    }
+    bar.innerHTML = inner;
+    row.innerHTML = `<div class="name" title="${r.strategy}">${r.strategy}</div>
+      <div class="dval" style="color:${col}">${r.isControl?"ctrl":signed(r.delta)}</div>`;
+    row.appendChild(bar);
+    forest.appendChild(row);
+  }
+  // table
+  const tb = $("#leaderboard tbody"); tb.innerHTML="";
+  for (const r of rows){
+    const tr = document.createElement("tr");
+    if (r.isControl) tr.className="control";
+    const ci = r.isControl ? '<span class="ci">—</span>'
+      : `<span class="ci">[${signed(r.ci_low)}, ${signed(r.ci_high)}]</span>`;
+    const dcol = r.isControl?"":(r.delta>=0?"pos":"neg");
+    tr.innerHTML = `<td>${r.strategy}</td><td class="num">${fmt(r.score)}</td>
+      <td class="num ${dcol}">${r.isControl?"—":signed(r.delta)}</td>
+      <td>${ci}</td><td class="num muted">${r.n}</td>`;
+    tb.appendChild(tr);
+  }
+}
+
+function renderTracks(eps){
+  const t = computeTracks(eps);
+  let rows = Object.values(t);
+  rows = sortRows(rows, trackSort, {strategy:r=>r.strategy});
+  const tb = $("#tracks tbody"); tb.innerHTML="";
+  for (const r of rows){
+    const tr = document.createElement("tr");
+    if (r.strategy===controlName()) tr.className="control";
+    tr.innerHTML = `<td>${r.strategy}</td>
+      <td class="num">${pct(r.agree)}</td>
+      <td class="num">${fmt(r.joint,2)}</td>
+      <td class="num">${pct(r.pareto)}</td>
+      <td class="num">${fmt(r.rounds,1)}</td>
+      <td class="num">${Number.isNaN(r.walk)?'<span class="muted">—</span>':pct(r.walk)}</td>`;
+    tb.appendChild(tr);
+  }
+}
+
+function fmtUsd(x){ return "$" + (x < 0.01 ? x.toFixed(5) : x.toFixed(4)); }
+function renderCost(eps){
+  const panel = $("#costPanel");
+  const totalTokens = eps.reduce((a,e)=>a+(e.token_cost||0),0);
+  // Hide for scripted runs (no cost, no tokens).
+  if (!eps.length || (!META.has_cost && totalTokens===0)){ panel.hidden = true; return; }
+  panel.hidden = false;
+
+  const withCost = eps.filter(e=>e.cost_usd!=null);
+  const totalCost = withCost.reduce((a,e)=>a+e.cost_usd,0);
+  const nCost = withCost.length;
+  const meanCost = nCost ? totalCost/nCost : null;
+  const meanTok = eps.length ? totalTokens/eps.length : 0;
+  $("#costHint").textContent = `${eps.length} of ${EPS.length} episodes selected`;
+
+  const tiles = [
+    ["total spend", META.has_cost ? fmtUsd(totalCost) : "—"],
+    ["mean $/episode", meanCost!=null ? fmtUsd(meanCost) : "—"],
+    ["total tokens", totalTokens.toLocaleString()],
+    ["mean tokens/episode", Math.round(meanTok).toLocaleString()],
+    ["episodes with cost", `${nCost} / ${eps.length}`],
+  ];
+  $("#costStats").innerHTML = tiles.map(([k,v])=>
+    `<div class="stat"><div class="statk">${k}</div><div class="statv">${v}</div></div>`).join("");
+
+  function groupRows(keyFn, label){
+    const groups = {};
+    for (const e of eps){ const k=keyFn(e); (groups[k] ||= []).push(e); }
+    return Object.entries(groups).sort((a,b)=>a[0]<b[0]?-1:1).map(([k,list])=>{
+      const wc = list.filter(e=>e.cost_usd!=null);
+      const cost = wc.reduce((a,e)=>a+e.cost_usd,0);
+      return { label:`${label}: ${k}`, n:list.length,
+               tokens:list.reduce((a,e)=>a+(e.token_cost||0),0),
+               cost, per: wc.length ? cost/wc.length : null };
+    });
+  }
+  const models = [...new Set(eps.map(e=>e.model))];
+  let rows = [];
+  if (models.length>1) rows = rows.concat(groupRows(e=>e.model, "model"));
+  rows = rows.concat(groupRows(e=>e.strategy, "strategy"));
+  $("#costTable tbody").innerHTML = rows.map(r=>
+    `<tr><td>${esc(r.label)}</td><td class="num">${r.n}</td>`
+    + `<td class="num">${r.tokens.toLocaleString()}</td>`
+    + `<td class="num">${META.has_cost?fmtUsd(r.cost):'<span class="muted">—</span>'}</td>`
+    + `<td class="num">${r.per!=null?fmtUsd(r.per):'<span class="muted">—</span>'}</td></tr>`).join("");
+
+  $("#costNote").textContent = META.has_cost
+    ? "Real spend from the provider's usage.cost (e.g. OpenRouter). Tokens are prompt+completion, summed over the agent's turns."
+    : "This run reported no cost (scripted, or a provider without usage.cost); token counts shown where available.";
+}
+
+function heatColor(q){
+  // diverging around 0.5
+  const lo=cssVar("--heat-lo"), mid=cssVar("--heat-mid"), hi=cssVar("--heat-hi");
+  const t = Math.max(0, Math.min(1, q));
+  const mix = (c1,c2,f)=>c1.map((c,i)=>Math.round(c+(c2[i]-c)*f));
+  const parse = h => { h=h.replace('#',''); if(h.length===3) h=h.split('').map(x=>x+x).join('');
+    return [0,2,4].map(i=>parseInt(h.substr(i,2),16)); };
+  const L=parse(lo), M=parse(mid), H=parse(hi);
+  const rgb = t<0.5 ? mix(L,M,t/0.5) : mix(M,H,(t-0.5)/0.5);
+  return `rgb(${rgb.join(',')})`;
+}
+function renderHeatmap(eps){
+  const cols = (heatDim==="seed") ? META.seeds.map(String) : DIMS[heatDim];
+  const ctl = controlName();
+  const strategies = [...new Set(eps.map(armOf))].sort((a,b)=>
+    a===ctl?-1:b===ctl?1:a.localeCompare(b));
+  // aggregate mean q
+  const acc = {};
+  for (const e of eps){
+    if (qOf(e)==null || degenOf(e)) continue;
+    const c = heatDim==="seed"? String(e.seed) : e[heatDim];
+    const a = armOf(e);
+    (acc[a] ||= {}); (acc[a][c] ||= []).push(qOf(e));
+  }
+  let html = `<table class="heat"><thead><tr><th></th>`;
+  for (const c of cols) html += `<th>${c}</th>`;
+  html += `</tr></thead><tbody>`;
+  for (const s of strategies){
+    html += `<tr><td class="rowhead">${s}</td>`;
+    for (const c of cols){
+      const arr = acc[s] && acc[s][c];
+      if (!arr || !arr.length){ html += `<td class="cell dim" style="background:var(--chip)">·</td>`; continue; }
+      const m = mean(arr);
+      const sel = cellFilter && cellFilter.strategy===s && cellFilter.dim===heatDim && cellFilter.value===c;
+      html += `<td class="cell${sel?' sel':''}" style="background:${heatColor(m)}"
+        data-s="${s}" data-c="${c}" title="${s} × ${c}: mean q=${(100*m).toFixed(1)} (n=${arr.length})">${(100*m).toFixed(0)}</td>`;
+    }
+    html += `</tr>`;
+  }
+  html += `</tbody></table>`;
+  const host = $("#heatmap"); host.innerHTML = html;
+  $$(".heat td.cell[data-s]", host).forEach(td=>{
+    td.onclick = () => {
+      const s=td.dataset.s, c=td.dataset.c;
+      if (cellFilter && cellFilter.strategy===s && cellFilter.dim===heatDim && cellFilter.value===c)
+        cellFilter=null;
+      else cellFilter={strategy:s, dim:heatDim, value:c};
+      renderEpisodes(filteredEpisodes()); renderHeatmap(filteredEpisodes());
+    };
+  });
+}
+$$("#heatToggle button").forEach(b=> b.onclick = () => {
+  $$("#heatToggle button").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active"); heatDim=b.dataset.dim; cellFilter=null; renderHeatmap(filteredEpisodes());
+});
+
+/* A2A: toggle which side is scored (seller strategy vs buyer persona). */
+function applySideLabels(){
+  const buyer = isBuyerSide();
+  const t = $("#boardTitle");
+  if (t) t.textContent = buyer ? "Persona effect Δ vs control (buyer captured value)"
+                               : "Strategy effect Δ vs control";
+  const armHead = buyer ? "persona" : "strategy";
+  const lbHead = document.querySelector('#leaderboard th[data-k="strategy"]');
+  if (lbHead) lbHead.textContent = armHead;
+  const tkHead = document.querySelector('#tracks th');
+  if (tkHead) tkHead.textContent = armHead;
+}
+if (META.has_a2a){ $("#sideToggle").hidden = false; $("#sideLabel").hidden = false; }
+$$("#sideToggle button").forEach(b=> b.onclick = () => {
+  $$("#sideToggle button").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active"); scoredSide=b.dataset.side; cellFilter=null;
+  applySideLabels(); renderAll();
+});
+applySideLabels();
+
+function episodeMatchesCell(e){
+  if (!cellFilter) return true;
+  if (armOf(e)!==cellFilter.strategy) return false;
+  const v = cellFilter.dim==="seed"? String(e.seed) : e[cellFilter.dim];
+  return v===cellFilter.value;
+}
+function renderEpisodes(eps){
+  let list = eps.filter(episodeMatchesCell);
+  if (searchTerm){
+    const q = searchTerm.toLowerCase();
+    list = list.filter(e => (e.strategy+" "+e.opponent+" "+e.scenario_id+" "+e.target_role+" "+e.outcome_kind).toLowerCase().includes(q));
+  }
+  const acc = {
+    q:e=>qOf(e)==null?-1:qOf(e), ub:e=>e.utilities.buyer, us:e=>e.utilities.seller,
+    strategy:e=>e.strategy, opponent:e=>e.opponent, scenario_id:e=>e.scenario_id,
+    target_role:e=>e.target_role, first_speaker:e=>e.first_speaker, seed:e=>e.seed,
+    outcome_kind:e=>e.outcome_kind, rounds_to_close:e=>e.rounds_to_close,
+  };
+  list = sortRows(list, episodeSort, acc);
+  $("#episodeCount").textContent = `${list.length} shown`;
+  $("#cellFilter").innerHTML = cellFilter
+    ? `<span class="pill">${cellFilter.strategy} × ${cellFilter.value} ✕</span>` : "";
+  if (cellFilter) $("#cellFilter").firstChild.onclick = ()=>{ cellFilter=null; renderEpisodes(filteredEpisodes()); renderHeatmap(filteredEpisodes()); };
+
+  const tb = $("#episodes tbody"); tb.innerHTML="";
+  for (const e of list){
+    const tr = document.createElement("tr"); tr.className="clickable";
+    if (selectedEpisode===e) tr.classList.add("selected");
+    const flags = validityFlags(e);
+    tr.innerHTML = `<td>${e.strategy}</td><td>${e.opponent}</td><td>${e.scenario_id}</td>
+      <td><span class="badge role">${e.target_role}</span></td>
+      <td class="muted">${e.first_speaker}</td><td class="num muted">${e.seed}</td>
+      <td><span class="badge ${e.outcome_kind}">${e.outcome_kind}</span></td>
+      <td class="num">${degenOf(e)?'<span class="muted">n/a</span>':fmt(100*qOf(e),0)}</td>
+      <td class="num">${fmt(e.utilities.buyer,2)}</td>
+      <td class="num">${fmt(e.utilities.seller,2)}</td>
+      <td class="num muted">${e.rounds_to_close}</td>
+      <td>${flags}</td>`;
+    tr.onclick = () => { selectedEpisode=e; renderEpisodes(filteredEpisodes()); renderReplay(e); };
+    tb.appendChild(tr);
+  }
+}
+function validityFlags(e){
+  const v=e.validity||{}; const map=[["legal_agreement","L"],["no_batna_violation","B"],["correct_walk_away","W"]];
+  return map.map(([k,ch])=> k in v ? `<span class="flag ${v[k]?'ok':'bad'}" title="${k}">${v[k]?'✓':'✕'}${ch}</span>`:"").join("");
+}
+
+/* ---------- replay ---------- */
+let uplots = [];
+function destroyPlots(){ uplots.forEach(p=>{try{p.destroy()}catch(e){}}); uplots=[]; }
+function renderReplay(e){
+  destroyPlots();
+  const sc = SCEN[e.scenario_id];
+  $("#replayTitle").textContent =
+    `${e.strategy} vs ${e.opponent} · ${e.scenario_id} · agent = ${e.target_role} · opens ${e.first_speaker} · seed ${e.seed}`;
+  const body = $("#replayBody");
+  body.innerHTML = `
+    <div class="replay-grid">
+      <div>
+        <h3>Offers by round</h3>
+        <div id="offerPlots"></div>
+        <h3 style="margin-top:14px">Utility trajectory</h3>
+        <div class="uholder" id="utilPlot"></div>
+        <div class="transport">
+          <button class="btn" id="playBtn">▶</button>
+          <input type="range" id="scrub" min="0" max="${e.steps.length-1}" value="${e.steps.length-1}" />
+          <span class="mono" id="scrubLbl"></span>
+        </div>
+        <div class="nowmsg" id="nowMsg"></div>
+      </div>
+      <div>
+        <h3>Outcome</h3>
+        <div class="kv" id="outcomeKV"></div>
+        <div class="qform" id="qform"></div>
+        <h3 style="margin-top:12px" id="logTitle">Action log</h3>
+        <div id="overrideBanner"></div>
+        <div class="log"><table><tbody id="logBody"></tbody></table></div>
+      </div>
+    </div>`;
+  // outcome KV
+  const prof = sc.parties[e.target_role];
+  const U = e.utilities[e.target_role];
+  const kv = $("#outcomeKV");
+  const agr = e.agreement ? Object.entries(e.agreement).map(([k,v])=>`${k}=${v}`).join(", ") : "—";
+  kv.innerHTML = `
+    <div class="k">outcome</div><div class="v"><span class="badge ${e.outcome_kind}">${e.outcome_kind}</span></div>
+    <div class="k">agreement</div><div class="v mono">${agr}</div>
+    <div class="k">u · buyer</div><div class="v">${fmt(e.utilities.buyer,3)}</div>
+    <div class="k">u · seller</div><div class="v">${fmt(e.utilities.seller,3)}</div>
+    <div class="k">rounds to close</div><div class="v">${e.rounds_to_close}</div>
+    <div class="k">latency</div><div class="v">${(e.latency_s*1000).toFixed(2)} ms</div>
+    <div class="k">token cost</div><div class="v">${e.token_cost}</div>
+    <div class="k">cost</div><div class="v">${e.cost_usd!=null ? "$"+e.cost_usd.toFixed(5)+" <span class=\"muted\">(real)</span>" : "<span class=\"muted\">not reported</span>"}</div>`;
+  // q formula
+  const I=prof.ideal, d=prof.batna;
+  const q = e.degenerate? null : Math.max(0, Math.min(1,(U-d)/(I-d)));
+  $("#qform").innerHTML = e.degenerate
+    ? `degenerate scenario (I = d = ${fmt(d,3)}) → q undefined, excluded`
+    : `q = clip((U − d)/(I − d), 0, 1)<br>= clip((${fmt(U,3)} − ${fmt(d,3)})/(${fmt(I,3)} − ${fmt(d,3)}), 0, 1)`
+      + ` = <b>${fmt(q,3)}</b> &nbsp;→&nbsp; S contribution ${fmt(100*q,1)}`;
+
+  buildOfferPlots(e, sc);
+  buildUtilPlot(e, sc);
+  buildLog(e);
+  const scrub=$("#scrub");
+  scrub.oninput = () => setCursor(e, +scrub.value);
+  let playing=null;
+  $("#playBtn").onclick = () => {
+    if (playing){ clearInterval(playing); playing=null; $("#playBtn").textContent="▶"; return; }
+    $("#playBtn").textContent="⏸";
+    if (+scrub.value>=e.steps.length-1) scrub.value=0;
+    playing=setInterval(()=>{
+      let v=+scrub.value; if (v>=e.steps.length-1){ clearInterval(playing); playing=null; $("#playBtn").textContent="▶"; return; }
+      scrub.value=v+1; setCursor(e, v+1);
+    }, 500);
+  };
+  setCursor(e, e.steps.length-1);
+}
+
+function stepSeries(e, sc){
+  // Build per-issue offer series for buyer and seller across rounds.
+  const rounds = [...new Set(e.steps.map(s=>s.round))].sort((a,b)=>a-b);
+  const xs = rounds;
+  const issues = sc.issues.map(i=>i.name);
+  const series = {}; // issue -> {buyer:[], seller:[]}
+  for (const iss of issues) series[iss] = {buyer:xs.map(()=>null), seller:xs.map(()=>null)};
+  for (const s of e.steps){
+    if (!s.outcome) continue;
+    const xi = rounds.indexOf(s.round);
+    for (const iss of issues){
+      if (iss in s.outcome) series[iss][s.party][xi] = s.outcome[iss];
+    }
+  }
+  return {xs, issues, series};
+}
+let OFFER_CTX = null;
+function buildOfferPlots(e, sc){
+  const host=$("#offerPlots"); host.innerHTML="";
+  const {xs, issues, series} = stepSeries(e, sc);
+  OFFER_CTX = {xs, issues, series, plots:[]};
+  const buyerC=cssVar("--accent"), sellerC=cssVar("--warn");
+  issues.forEach((iss, idx)=>{
+    const div=document.createElement("div"); div.className="uholder"; div.style.marginTop = idx?"10px":"0";
+    const cap=document.createElement("div"); cap.className="hint"; cap.textContent = iss + (sc.issues[idx].unit?` (${sc.issues[idx].unit})`:"");
+    host.appendChild(cap); host.appendChild(div);
+    const issueMeta = sc.issues[idx];
+    const zopaVals = zopaRange(sc, iss);
+    const opts = baseOpts(div.clientWidth||520, 140, {
+      scales:{y:{range:(u,min,max)=>{
+        const vals=issueMeta.values; return [Math.min(...vals), Math.max(...vals)];
+      }}},
+      series:[{}, mkSeries("buyer", buyerC), mkSeries("seller", sellerC)],
+      hooks: zopaVals ? {draw:[u=>drawBand(u, zopaVals[0], zopaVals[1])]} : {},
+    });
+    const data=[xs, series[iss].buyer, series[iss].seller];
+    const u=new uPlot(opts, data, div); uplots.push(u); OFFER_CTX.plots.push(u);
+  });
+  $("#offerPlots").insertAdjacentHTML("beforeend",
+    `<div class="legend"><span style="--sw:${buyerC}">buyer offer</span><span style="--sw:${sellerC}">seller offer</span><span style="--sw:var(--line-strong)">ZOPA band</span></div>`);
+}
+function mkSeries(label, color){
+  return {label, stroke:color, width:2, points:{show:true, size:5, stroke:color, fill:color},
+    spanGaps:true};
+}
+function zopaRange(sc, issue){
+  if (!sc.zopa_outcomes || !sc.zopa_outcomes.length) return null;
+  const vals = sc.zopa_outcomes.map(o=>o[issue]).filter(v=>v!=null);
+  if (!vals.length) return null;
+  return [Math.min(...vals), Math.max(...vals)];
+}
+function drawBand(u, lo, hi){
+  const ctx=u.ctx; const x0=u.bbox.left, x1=u.bbox.left+u.bbox.width;
+  const yLo=u.valToPos(lo, "y", true), yHi=u.valToPos(hi, "y", true);
+  ctx.save(); ctx.fillStyle = cssVar("--accent-soft"); ctx.globalAlpha=0.7;
+  ctx.fillRect(x0, Math.min(yLo,yHi), x1-x0, Math.abs(yHi-yLo)); ctx.restore();
+}
+
+let UTIL_CTX=null;
+function buildUtilPlot(e, sc){
+  const div=$("#utilPlot"); div.innerHTML="";
+  const {xs} = stepSeries(e, sc);
+  // running utility for each party from step utilities (last offer each round)
+  const bu=xs.map(()=>null), su=xs.map(()=>null);
+  const rounds=xs;
+  for (const s of e.steps){
+    if (!s.utilities) continue;
+    const xi=rounds.indexOf(s.round);
+    // record the acting party's utility of what's on the table
+    bu[xi] = s.utilities.buyer; su[xi]=s.utilities.seller;
+  }
+  const buyerC=cssVar("--accent"), sellerC=cssVar("--warn");
+  const db=sc.parties.buyer.batna, ds=sc.parties.seller.batna;
+  const opts=baseOpts(div.clientWidth||520, 150, {
+    scales:{y:{range:[0,1]}},
+    series:[{}, mkSeries("u·buyer",buyerC), mkSeries("u·seller",sellerC)],
+    hooks:{draw:[u=>{ drawHLine(u, db, buyerC); drawHLine(u, ds, sellerC); }]},
+  });
+  const u=new uPlot(opts, [xs, bu, su], div); uplots.push(u); UTIL_CTX={u, xs};
+  div.insertAdjacentHTML("afterend",
+    `<div class="legend"><span style="--sw:${buyerC}">u·buyer</span><span style="--sw:${sellerC}">u·seller</span><span style="--sw:var(--muted)">dashed = BATNA</span></div>`);
+}
+function drawHLine(u, y, color){
+  const ctx=u.ctx, x0=u.bbox.left, x1=u.bbox.left+u.bbox.width, yy=u.valToPos(y,"y",true);
+  ctx.save(); ctx.strokeStyle=color; ctx.globalAlpha=.45; ctx.setLineDash([4,4]); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(x0,yy); ctx.lineTo(x1,yy); ctx.stroke(); ctx.restore();
+}
+
+function baseOpts(w, h, extra){
+  const grid={stroke:cssVar("--line"), width:1};
+  const ax={stroke:cssVar("--muted"), grid, ticks:grid, font:"11px system-ui",
+    size:34, labelSize:0};
+  return Object.assign({
+    width:Math.max(260,w), height:h, cursor:{y:false},
+    legend:{show:false},
+    axes:[Object.assign({}, ax, {size:24}), ax],
+    scales:{x:{time:false}},
+  }, extra);
+}
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function fmtOutcome(o){
+  return o ? Object.entries(o).map(([k,v])=>`${k}=${v}`).join(" ") : "—";
+}
+function adjustHtml(s){
+  // What was adjusted (snap / shop floor) or errored, and why. Never a scripted
+  // strategy substitution — the model's own decision, faithfully corrected.
+  if (s.error){
+    const wanted = s.intended_outcome ? ` (model sent ${esc(fmtOutcome(s.intended_outcome))})` : "";
+    return `<div class="override err"><b>ERROR — episode excluded:</b> ${esc(s.error_reason||'unusable model reply')}${wanted}</div>`;
+  }
+  if (!s.adjusted) return "";
+  const reason = s.adjust_reason || "adjusted";
+  const wanted = s.intended_action
+    ? `${s.intended_action}${s.intended_outcome?` · ${fmtOutcome(s.intended_outcome)}`:""}`
+    : "";
+  const played = `${s.action}${s.outcome?` · ${fmtOutcome(s.outcome)}`:""}`;
+  let html = `<div class="override"><b>adjusted:</b> ${esc(reason)}`;
+  if (wanted) html += `<div>model tried <span class="mono">${esc(wanted)}</span></div>`;
+  html += `<div class="played">played <span class="mono">${esc(played)}</span></div></div>`;
+  return html;
+}
+function fullResponseHtml(s){
+  // Collapsible chain-of-thought and verbatim reply, so you can verify exactly
+  // what the model produced this turn.
+  let html = "";
+  if (s.reasoning){
+    html += `<details class="llm-detail"><summary>thinking (${s.reasoning.length.toLocaleString()} chars)</summary>`
+      + `<pre class="llm-pre">${esc(s.reasoning)}</pre></details>`;
+  }
+  if (s.raw_response){
+    html += `<details class="llm-detail"><summary>full response</summary>`
+      + `<pre class="llm-pre">${esc(s.raw_response)}</pre></details>`;
+  }
+  return html;
+}
+function stepTag(s){
+  if (s.error) return `<span class="fallback-tag" title="${esc(s.error_reason||'unusable reply')}">error</span>`;
+  if (s.adjusted) return `<span class="fallback-tag" title="${esc(s.adjust_reason||'adjusted')}">adjusted</span>`;
+  return "";
+}
+function buildLog(e){
+  const hasMsg = e.steps.some(s=>s.rationale);
+  $("#logTitle").textContent = hasMsg ? "Action log & agent messages" : "Action log";
+  const nAdj = e.steps.filter(s=>s.adjusted).length;
+  let banner = "";
+  if (e.errored) banner += `<div class="override-banner">⚠ episode EXCLUDED from scoring — the agent produced an unusable reply: ${esc(e.error_reason||'error')}.</div>`;
+  if (nAdj) banner += `<div class="override-banner">${nAdj} of ${e.steps.length} moves were adjusted — an off-grid value snapped to the nearest legal tier, or a below-floor quote clamped up to the shop's reservation floor. No scripted values are ever substituted. Highlighted below.</div>`;
+  $("#overrideBanner").innerHTML = banner;
+  const tb=$("#logBody"); tb.innerHTML="";
+  e.steps.forEach((s,i)=>{
+    const tr=document.createElement("tr"); tr.dataset.i=i;
+    const oc = s.outcome? Object.entries(s.outcome).map(([k,v])=>`${k}=${v}`).join(" "):"";
+    const tag = stepTag(s);
+    const say = s.rationale ? `<div class="say">${esc(s.rationale)}</div>` : "";
+    tr.innerHTML=`<td class="muted">${s.round}</td><td>${s.party}</td>
+      <td><b>${s.action}</b>${tag}</td><td><span class="mono">${oc}</span>${say}${adjustHtml(s)}</td>`;
+    tr.onclick=()=>{ $("#scrub").value=i; setCursor(e,i); };
+    tb.appendChild(tr);
+  });
+}
+function setCursor(e, idx){
+  const cur = e.steps[idx];
+  $("#scrubLbl").textContent = `step ${idx+1}/${e.steps.length} · round ${cur.round}`;
+  // current-turn message bubble
+  const nm = $("#nowMsg");
+  if (nm){
+    const who = cur.party;
+    const tag = stepTag(cur);
+    const over = adjustHtml(cur);
+    const full = fullResponseHtml(cur);
+    if (cur.rationale){
+      nm.innerHTML = `<span class="who ${who}">${who}</span>
+        <div class="bubble"><div class="act">${cur.action}${cur.outcome?` · ${Object.entries(cur.outcome).map(([k,v])=>k+"="+v).join(" ")}`:""} ${tag}</div>${esc(cur.rationale)}${over}${full}</div>`;
+    } else if (full){
+      // No one-line rationale, but the model did reply (e.g. a malformed answer
+      // that fell back) — show the raw reply/thinking so it can be inspected.
+      nm.innerHTML = `<span class="who ${who}">${who}</span>
+        <div class="bubble"><div class="act">${cur.action} ${tag}</div>${over}${full}</div>`;
+    } else {
+      const why = META.has_messages ? "no message this turn" : "scripted policy — no agent message";
+      nm.innerHTML = `<span class="who ${who}">${who}</span><div class="bubble none">${why} · <b>${cur.action}</b>${tag}${over}</div>`;
+    }
+  }
+  $$("#logBody tr").forEach(tr=>{
+    const i=+tr.dataset.i; tr.className = i<idx?"past":i===idx?"now":"future";
+    if (i===idx) tr.scrollIntoView({block:"nearest"});
+  });
+  // truncate uPlot data to idx (by round position)
+  if (OFFER_CTX){
+    const cutRound = e.steps[idx].round;
+    const upto = OFFER_CTX.xs.map(r=>r<=cutRound);
+    OFFER_CTX.issues.forEach((iss,pi)=>{
+      const b=OFFER_CTX.series[iss].buyer.map((v,j)=>upto[j]?v:null);
+      const s=OFFER_CTX.series[iss].seller.map((v,j)=>upto[j]?v:null);
+      OFFER_CTX.plots[pi].setData([OFFER_CTX.xs, b, s]);
+    });
+  }
+  if (UTIL_CTX){
+    // rebuild util arrays up to cursor
+    const cutRound=e.steps[idx].round;
+    const bu=UTIL_CTX.xs.map(()=>null), su=UTIL_CTX.xs.map(()=>null);
+    for (const s of e.steps){ if (s.round>cutRound || !s.utilities) continue;
+      const xi=UTIL_CTX.xs.indexOf(s.round); bu[xi]=s.utilities.buyer; su[xi]=s.utilities.seller; }
+    UTIL_CTX.u.setData([UTIL_CTX.xs, bu, su]);
+  }
+}
+
+/* ---------- sorting helpers ---------- */
+function sortRows(rows, sort, acc){
+  const f = acc[sort.k] || (r=>r[sort.k]);
+  return rows.slice().sort((a,b)=>{
+    const x=f(a), y=f(b);
+    if (typeof x==="string") return sort.dir*x.localeCompare(y);
+    return sort.dir*((x??-Infinity)-(y??-Infinity));
+  });
+}
+function wireSort(tableId, state, rerender){
+  $$(`#${tableId} th.sortable`).forEach(th=>{
+    th.onclick=()=>{ const k=th.dataset.k;
+      if (state.k===k) state.dir*=-1; else { state.k=k; state.dir=(k==="strategy")?1:-1; }
+      rerender(); };
+  });
+}
+wireSort("leaderboard", boardSort, ()=>renderLeaderboard(filteredEpisodes()));
+wireSort("tracks", trackSort, ()=>renderTracks(filteredEpisodes()));
+wireSort("episodes", episodeSort, ()=>renderEpisodes(filteredEpisodes()));
+$("#episodeSearch").oninput = ev => { searchTerm=ev.target.value; renderEpisodes(filteredEpisodes()); };
+
+buildFilters();
+renderAll();
+</script>
+</body>
+</html>

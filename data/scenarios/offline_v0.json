@@ -1,0 +1,142 @@
+{
+  "_comment": "IMMUTABLE v0.1 offline anchor set. Do not edit values; add new files for new scenarios so results stay comparable.",
+  "scenarios": [
+    {
+      "id": "single_price_a",
+      "kind": "single_issue",
+      "product": "standard widget (1000 units)",
+      "outcome_space_version": "v0.1",
+      "issues": [
+        { "name": "price", "unit": "EUR", "values": [80, 90, 100, 110, 120] }
+      ],
+      "buyer": {
+        "role": "buyer",
+        "issues": [
+          { "issue": "price", "weight": 1.0, "value_utilities": [1.0, 0.75, 0.5, 0.25, 0.0] }
+        ],
+        "batna": 0.25
+      },
+      "seller": {
+        "role": "seller",
+        "issues": [
+          { "issue": "price", "weight": 1.0, "value_utilities": [0.0, 0.25, 0.5, 0.75, 1.0] }
+        ],
+        "batna": 0.25
+      },
+      "deadline_rounds": 12,
+      "seed": 101
+    },
+    {
+      "id": "single_price_b",
+      "kind": "single_issue",
+      "product": "premium component (500 units)",
+      "outcome_space_version": "v0.1",
+      "issues": [
+        { "name": "price", "unit": "EUR", "values": [50, 60, 70, 80, 90, 100] }
+      ],
+      "buyer": {
+        "role": "buyer",
+        "issues": [
+          { "issue": "price", "weight": 1.0, "value_utilities": [1.0, 0.8, 0.6, 0.4, 0.2, 0.0] }
+        ],
+        "batna": 0.2
+      },
+      "seller": {
+        "role": "seller",
+        "issues": [
+          { "issue": "price", "weight": 1.0, "value_utilities": [0.0, 0.2, 0.4, 0.6, 0.8, 1.0] }
+        ],
+        "batna": 0.3
+      },
+      "deadline_rounds": 12,
+      "seed": 102
+    },
+    {
+      "id": "multi_pdw_a",
+      "kind": "multi_issue",
+      "product": "machine parts contract",
+      "outcome_space_version": "v0.1",
+      "issues": [
+        { "name": "price", "unit": "EUR", "values": [100, 150, 200] },
+        { "name": "delivery_days", "unit": "days", "values": [30, 14, 7] },
+        { "name": "warranty_months", "unit": "months", "values": [6, 12, 24] }
+      ],
+      "buyer": {
+        "role": "buyer",
+        "issues": [
+          { "issue": "price", "weight": 0.5, "value_utilities": [1.0, 0.5, 0.0] },
+          { "issue": "delivery_days", "weight": 0.2, "value_utilities": [0.0, 0.5, 1.0] },
+          { "issue": "warranty_months", "weight": 0.3, "value_utilities": [0.0, 0.5, 1.0] }
+        ],
+        "batna": 0.35
+      },
+      "seller": {
+        "role": "seller",
+        "issues": [
+          { "issue": "price", "weight": 0.6, "value_utilities": [0.0, 0.5, 1.0] },
+          { "issue": "delivery_days", "weight": 0.3, "value_utilities": [1.0, 0.5, 0.0] },
+          { "issue": "warranty_months", "weight": 0.1, "value_utilities": [1.0, 0.5, 0.0] }
+        ],
+        "batna": 0.35
+      },
+      "deadline_rounds": 16,
+      "seed": 201
+    },
+    {
+      "id": "multi_pdw_b",
+      "kind": "multi_issue",
+      "product": "electronics supply agreement",
+      "outcome_space_version": "v0.1",
+      "issues": [
+        { "name": "price", "unit": "EUR", "values": [200, 250, 300] },
+        { "name": "delivery_days", "unit": "days", "values": [21, 10, 3] },
+        { "name": "warranty_months", "unit": "months", "values": [12, 24, 36] }
+      ],
+      "buyer": {
+        "role": "buyer",
+        "issues": [
+          { "issue": "price", "weight": 0.4, "value_utilities": [1.0, 0.5, 0.0] },
+          { "issue": "delivery_days", "weight": 0.35, "value_utilities": [0.0, 0.5, 1.0] },
+          { "issue": "warranty_months", "weight": 0.25, "value_utilities": [0.0, 0.5, 1.0] }
+        ],
+        "batna": 0.3
+      },
+      "seller": {
+        "role": "seller",
+        "issues": [
+          { "issue": "price", "weight": 0.5, "value_utilities": [0.0, 0.5, 1.0] },
+          { "issue": "delivery_days", "weight": 0.2, "value_utilities": [1.0, 0.5, 0.0] },
+          { "issue": "warranty_months", "weight": 0.3, "value_utilities": [1.0, 0.5, 0.0] }
+        ],
+        "batna": 0.3
+      },
+      "deadline_rounds": 16,
+      "seed": 202
+    },
+    {
+      "id": "no_zopa_price",
+      "kind": "no_zopa_diagnostic",
+      "product": "commodity lot (no overlap)",
+      "outcome_space_version": "v0.1",
+      "issues": [
+        { "name": "price", "unit": "EUR", "values": [80, 100, 120] }
+      ],
+      "buyer": {
+        "role": "buyer",
+        "issues": [
+          { "issue": "price", "weight": 1.0, "value_utilities": [1.0, 0.5, 0.0] }
+        ],
+        "batna": 0.9
+      },
+      "seller": {
+        "role": "seller",
+        "issues": [
+          { "issue": "price", "weight": 1.0, "value_utilities": [0.0, 0.5, 1.0] }
+        ],
+        "batna": 0.9
+      },
+      "deadline_rounds": 12,
+      "seed": 301
+    }
+  ]
+}

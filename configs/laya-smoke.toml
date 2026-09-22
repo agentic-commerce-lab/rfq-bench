@@ -1,0 +1,35 @@
+# Laya decision-model agent — smoke test, seller side only.
+#
+# Run with:  uv run rfq-bench run --config configs/laya-smoke.toml
+# Score with: uv run rfq-bench report    --traces results/laya_v0.jsonl
+#             uv run rfq-bench dashboard --traces results/laya_v0.jsonl
+#
+# Requires the local Laya server running (English checkpoint). Point at it with
+# RFQ_BENCH_LAYA_URL in .env if it is not on the default http://127.0.0.1:8000
+# (endpoint POST /predict). Laya is local + deterministic: no API cost, and the
+# same inputs reproduce the same traces.
+#
+# Laya plays the SELLER, picking its own offer and deciding accept/walk; each strategy
+# is injected as guidance text it reads. Small subset for a quick check; see
+# configs/laya-full.toml for the complete matrix.
+# Matrix: scenarios x strategies x opponents x first-speakers x seeds
+#       = 2 x 2 x 4 x 2 x 1 = 32.
+
+[run]
+agent       = "laya"
+roles       = ["seller"]                  # Laya is the seller; opponents are the buyers
+scenarios   = ["single_price_a", "multi_pdw_a"]   # one single-issue, one multi-issue
+strategies  = ["control", "boulware"]     # two arms for a quick contrast
+opponents   = ["hardliner", "fast_conceder", "reciprocal", "integrative"]
+seeds       = [0]
+concurrency = 1                           # one forward pass at a time on the Laya server
+overwrite   = true
+
+out           = "results/laya_v0.jsonl"
+dashboard     = true
+dashboard_out = "results/laya_dashboard.html"
+
+[dashboard]
+control = "laya"                          # single arm; Δ is 0 by definition here
+n_boot  = 2000
+seed    = 0

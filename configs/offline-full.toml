@@ -1,0 +1,21 @@
+# Full offline simulation — the complete deterministic matrix, no LLM.
+#
+# Run with:  uv run rfq-bench run --config configs/offline-full.toml
+#
+# The matrix lists (scenarios/strategies/opponents/roles/first_speakers) are left
+# unset on purpose, so this always sweeps EVERYTHING in the dataset — all
+# scenarios x all strategies x all opponents x both roles x both first-speakers.
+# (logrolling is auto-skipped on single-issue scenarios.)
+
+[run]
+agent       = "scripted"                 # deterministic policies; no network, no cost
+seeds       = [0]                        # scripted episodes are deterministic, so one seed suffices
+overwrite   = true                       # fresh full run each time
+out         = "results/offline_v0.jsonl"
+dashboard   = true                       # rebuild the dashboard from the full run
+dashboard_out = "results/dashboard.html"
+
+[dashboard]
+control = "control"                      # Δ vs control
+n_boot  = 2000                           # bootstrap resamples for CIs
+seed    = 0                              # reproducible CIs

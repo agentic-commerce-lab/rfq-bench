@@ -1,0 +1,42 @@
+# A2A self-play — full buyer-persona × seller-strategy grid.
+#
+# Run with:  uv run rfq-bench run --config configs/a2a-grid.toml
+# Score with: uv run rfq-bench report    --traces results/a2a_grid.jsonl
+#             uv run rfq-bench dashboard --traces results/a2a_grid.jsonl
+#
+# Every buyer persona against every seller strategy. The dashboard's strategy ×
+# opponent(persona) heatmap is the interaction surface; `report` gives the seller-Δ
+# (per strategy vs `control`) and buyer-Δ (per persona vs `neutral`) tables.
+#
+# Matrix: scenarios x strategies x personas x first-speakers x seeds
+#   = 2 x 7 x 5 x 1 x 1 = 70, minus logrolling on the single-issue scenario (5) = 65.
+# Cost levers kept: buyer always opens (no first-speaker mirror) and rounds capped at 8
+# (deadlines are 12/16). Remove `max_rounds` and add first_speakers = ["buyer","seller"]
+# for full-fidelity, comparable numbers.
+
+[run]
+agent       = "a2a"
+
+scenarios   = ["single_price_a", "multi_pdw_a"]   # one single-issue, one multi-issue
+
+# All seven seller strategies (control is the Δ baseline; logrolling is multi-issue only).
+strategies  = ["control", "boulware", "linear", "conceder", "tit_for_tat", "anchoring", "logrolling"]
+
+# All buyer personas defined for these scenarios (neutral is the buyer-Δ baseline).
+personas    = ["neutral", "cost_focused", "total_value", "reliability_first", "relationship_focused"]
+
+first_speakers = ["buyer"]                # customer always opens
+seeds       = [0]
+max_rounds  = 8                           # caps rounds/episode; remove for final numbers
+concurrency = 6
+retries     = 2
+overwrite   = true
+
+out           = "results/a2a_grid.jsonl"
+dashboard     = true
+dashboard_out = "results/a2a_grid_dashboard.html"
+
+[dashboard]
+control = "control"                       # seller-side Δ baseline (buyer side uses `neutral`)
+n_boot  = 2000
+seed    = 0
