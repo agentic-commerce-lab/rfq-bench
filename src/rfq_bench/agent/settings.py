@@ -24,6 +24,18 @@ class AgentSettings(BaseSettings):
     # Generous by default: reasoning models spend output budget "thinking" and a
     # too-low cap truncates the function call, which shows up as a hard error.
     max_tokens: int = Field(default=4096, alias="RFQ_BENCH_MAX_TOKENS")
+    # Bounded re-asks when a reply has no usable move (e.g. a reasoning model that
+    # narrates its move instead of calling the tool). Each re-ask is a real billed
+    # call with a stricter corrective nudge; the count is recorded per turn. 0
+    # disables. Faithful — it re-elicits the model's own move, never fabricates one.
+    max_reasks: int = Field(default=2, alias="RFQ_BENCH_MAX_REASKS")
+    # Retries of the *identical* request when the provider fails transiently: a
+    # 200 with no choices (OpenRouter's upstream-error envelope), HTTP 429/5xx, or
+    # a connection/timeout error. Exponential backoff: base, 2x, 4x, ... seconds.
+    # Separate from re-asks — the model did nothing wrong, so no corrective nudge
+    # and no effect on reask_count. A content-filter block is never retried.
+    transient_retries: int = Field(default=3, alias="RFQ_BENCH_TRANSIENT_RETRIES")
+    transient_backoff_s: float = Field(default=1.0, alias="RFQ_BENCH_TRANSIENT_BACKOFF")
     seed: int | None = Field(default=7, alias="RFQ_BENCH_SEED")
     timeout: float = Field(default=60.0, alias="RFQ_BENCH_TIMEOUT")
     # Ask the endpoint to report real spend in the response usage (OpenRouter's

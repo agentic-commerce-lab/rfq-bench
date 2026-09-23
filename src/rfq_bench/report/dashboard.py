@@ -100,8 +100,12 @@ def _episode_payload(trace: Trace, scenario: Scenario) -> dict[str, Any]:
             "outcome": s.outcome,
             "utilities": _step_utilities(scenario, s.outcome),
             "rationale": s.rationale,
+            "message": s.message,
+            "message_truncated": s.message_truncated,
+            "message_withheld": s.message_withheld,
             "adjusted": s.adjusted,
             "adjust_reason": s.adjust_reason,
+            "adjust_kind": s.adjust_kind,
             "intended_action": s.intended_action,
             "intended_outcome": s.intended_outcome,
             "error": s.error,
@@ -135,6 +139,11 @@ def _episode_payload(trace: Trace, scenario: Scenario) -> dict[str, Any]:
         "token_cost": trace.token_cost,
         "cost_usd": trace.cost_usd,
         "validity": dict(trace.validity),
+        # Policy constraints that fired, per party (invalid moves the harness corrected).
+        "policy_fires": {
+            role: sum(1 for s in trace.steps if s.adjusted and s.party == role)
+            for role in ("buyer", "seller")
+        },
         "steps": steps,
     }
 
@@ -157,7 +166,7 @@ def build_payload(
     used_ids = {t.scenario_id for t in traces}
     episodes = [_episode_payload(t, scenarios[t.scenario_id]) for t in traces]
     n_degenerate = sum(1 for e in episodes if e["degenerate"])
-    has_messages = any(s["rationale"] for e in episodes for s in e["steps"])
+    has_messages = any(s["rationale"] or s["message"] for e in episodes for s in e["steps"])
     has_adjustments = any(s["adjusted"] for e in episodes for s in e["steps"])
     has_errors = any(e["errored"] for e in episodes)
     n_errored = sum(1 for e in episodes if e["errored"])

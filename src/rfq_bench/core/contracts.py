@@ -157,6 +157,8 @@ class Step(BaseModel):
     # scripted-strategy substitution. ``intended_*`` record what the model tried.
     adjusted: bool = False
     adjust_reason: str | None = None
+    # Which policy constraint fired: "snap" | "floor_offer" | "floor_accept".
+    adjust_kind: str | None = None
     intended_action: str | None = None
     intended_outcome: dict[str, Any] | None = None
     # This turn produced an unusable reply and aborted the episode.
@@ -166,6 +168,15 @@ class Step(BaseModel):
     # produced them. These are for human audit only — never fed back to any model.
     raw_response: str | None = None
     reasoning: str | None = None
+    # Corrective re-asks the LLM agent needed to elicit this move (0 = first try).
+    reask_count: int = 0
+    # A2A only: the public message sent with this move, in full (the other party
+    # received at most MESSAGE_MAX_CHARS of it; ``message_truncated`` says if cut).
+    # Unlike ``rationale``, this WAS shown to the opponent.
+    message: str | None = None
+    message_truncated: bool = False
+    # A policy constraint fired on this move, so the message was not delivered.
+    message_withheld: bool = False
 
 
 class Trace(BaseModel):
@@ -208,6 +219,10 @@ class Trace(BaseModel):
     # cost reporting. Offline traces record only the tested agent's role.
     token_cost_by_role: dict[Role, int] = Field(default_factory=dict)
     cost_usd_by_role: dict[Role, float] = Field(default_factory=dict)
+    # Prompt tokens sent per LLM side, and how many the provider served from its
+    # prompt cache — the cache hit rate is cached / prompt. Empty when unreported.
+    prompt_tokens_by_role: dict[Role, int] = Field(default_factory=dict)
+    cached_tokens_by_role: dict[Role, int] = Field(default_factory=dict)
     # The tested agent produced an unusable reply (see Step.error); the episode is
     # aborted and EXCLUDED from scoring. The error rate is reported separately.
     errored: bool = False

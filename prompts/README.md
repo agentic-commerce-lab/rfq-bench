@@ -21,11 +21,15 @@ Notes:
 - The prompt is frozen *within a run* (the same resolved text for every arm). An
   override is a new, explicitly versioned benchmark condition — don't compare its
   results against runs made with a different prompt.
-- The negotiation state (role, issues, priorities, walk-away, the strategy/persona
-  instruction) is appended automatically as the user message. Keep the system prompt
-  about *how to behave and how to respond* (it must still tell the model to call
-  `submit_move` with a value for every issue), and leave the per-turn facts to the
-  harness.
+- The negotiation state (role, issues with options best-first, walk-away, the
+  strategy/persona instruction, `history`, `rounds_left`, the standing offer) is
+  appended automatically as the user message. Keep the system prompt about *how to
+  behave and how to respond*. It must still tell the model to call `submit_move` with
+  a value for every issue, and explain how to read `your_walk_away` and `history`,
+  because the payload carries bare terms without explanatory sentences. Leave the
+  per-turn facts to the harness.
+- Keep buyer and seller prompts symmetric. In A2A a prompt that differs by role
+  confounds the comparison between the two sides.
 - `system.example.md` and this README are **not** auto-loaded (only `system.md` /
   `system_<role>.md` are), so they are safe to keep here.
 
@@ -51,6 +55,9 @@ Caveats:
   and `--agent a2a`. Running a *new* strategy in scripted offline mode also needs a
   deterministic policy in `strategies/registry.py`; the built-in seven have both.
 - A persona must stay **disposition only** — no private economics (utilities, weights,
-  BATNA). The leakage test guards the built-ins; **your custom files are your
-  responsibility** (keep them behavioral, like the built-in wording).
+  BATNA). The leakage test checks the built-ins **and** every `*.md` file here, so a
+  file that uses those words fails the test suite. Use the payload's own terms
+  ("walk-away") instead.
+- In A2A the sides can exchange short public messages, so guidance about sharing or
+  withholding information has an effect there. With `--agent llm` there is no channel.
 

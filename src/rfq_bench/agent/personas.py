@@ -22,8 +22,7 @@ from rfq_bench.agent.prompts import read_guidance_dir
 # Each persona is one short behavioral instruction, mirroring STRATEGY_GUIDANCE.
 PERSONA_GUIDANCE: dict[str, str] = {
     # Neutral baseline: the businesslike buyer with no special disposition.
-    "neutral": "Negotiate neutrally and businesslike toward a fair deal. No special "
-    "urgency, aggression, or reluctance.",
+    "neutral": "Negotiate neutrally and businesslike toward a fair deal.",
     # Extremely price-sensitive; grinds for discounts and yields slowly on price.
     "bargain_hunter": "You are intensely focused on getting the lowest possible price. "
     "Push hard for discounts, resist price concessions, and treat a low price as the "

@@ -41,6 +41,7 @@ class Event:
     # The played move was adjusted (snapped to grid / clamped to the shop floor).
     adjusted: bool = False
     adjust_reason: str | None = None
+    adjust_kind: str | None = None
     intended_action: str | None = None
     intended_outcome: dict[str, Any] | None = None
     # The move was unusable and aborted the episode.
@@ -48,6 +49,12 @@ class Event:
     error_reason: str | None = None
     raw_response: str | None = None
     reasoning: str | None = None
+    # Corrective re-asks the LLM agent needed to produce this move (0 = first try).
+    reask_count: int = 0
+    # A2A message channel: the public message sent with this move (full text).
+    message: str | None = None
+    message_truncated: bool = False
+    message_withheld: bool = False
 
 
 def _event(
@@ -61,13 +68,49 @@ def _event(
         rationale=move.rationale,
         adjusted=move.adjusted,
         adjust_reason=move.adjust_reason,
+        adjust_kind=move.adjust_kind,
         intended_action=move.intended_action,
         intended_outcome=move.intended_outcome,
         error=move.error,
         error_reason=move.error_reason,
         raw_response=move.raw_response,
         reasoning=move.reasoning,
+        reask_count=move.reask_count,
+        message=move.message,
+        message_truncated=move.message_truncated,
+        message_withheld=move.message_withheld,
     )
+
+
+def _history(events: list[Event]) -> list[dict[str, Any]]:
+    """Both parties' offers so far, oldest first, as the LLM payload's transcript.
+
+    Only offers can precede a turn (an accept, walk-away, or error ends the
+    episode). Messages are carried in full; the payload truncates on delivery. A
+    withheld message (a policy constraint fired on that move) is never delivered.
+    ``policy`` records a correction so the payload can tell the *author* (only) what
+    it sent and why the played offer differs.
+    """
+    return [
+        {
+            "round": e.round,
+            "by": e.party,
+            "offer": e.outcome,
+            "message": None if e.message_withheld else e.message,
+            "policy": (
+                {
+                    "kind": e.adjust_kind,
+                    "action": e.intended_action,
+                    "sent": e.intended_outcome,
+                    "withheld": e.message_withheld,
+                }
+                if e.adjusted
+                else None
+            ),
+        }
+        for e in events
+        if e.action == "offer" and e.outcome is not None
+    ]
 
 
 def to_tuple(outcome: dict[str, Any], issues: list[Issue]) -> tuple[Any, ...]:
@@ -123,6 +166,8 @@ class PolicyNegotiator(SAONegotiator):  # type: ignore[misc]  # NegMAS ships no 
         self._made: list[dict[str, Any]] = []
         self._received: list[dict[str, Any]] = []
         self.total_tokens = 0
+        self.total_prompt_tokens = 0
+        self.total_cached_tokens = 0
         self.total_cost = 0.0
         self.cost_reported = False
 
@@ -146,9 +191,12 @@ class PolicyNegotiator(SAONegotiator):  # type: ignore[misc]  # NegMAS ships no 
             deadline=self._deadline,
             opponent_offers=list(self._received),
             my_offers=list(self._made),
+            history=_history(self._events),
         )
         move = decide(self._policy, standing, neg_state)
         self.total_tokens += move.token_cost
+        self.total_prompt_tokens += move.prompt_tokens
+        self.total_cached_tokens += move.cached_tokens
         if move.cost_usd is not None:
             self.total_cost += move.cost_usd
             self.cost_reported = True

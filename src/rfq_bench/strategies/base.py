@@ -41,6 +41,10 @@ class NegotiationState:
     opponent_offers: list[dict[str, Any]] = field(default_factory=list)
     # Outcomes we have proposed, oldest first.
     my_offers: list[dict[str, Any]] = field(default_factory=list)
+    # Both parties' moves so far in the order they happened, as
+    # {"round", "by" (role), "offer", "message"}; the LLM payload renders this
+    # append-only transcript (cache-friendly). Scripted policies ignore it.
+    history: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def progress(self) -> float:
@@ -71,6 +75,10 @@ class Move:
     # and NOT an error — the episode is still scored.
     adjusted: bool = False
     adjust_reason: str | None = None
+    # Which policy constraint fired, for counting: "snap" (off-grid value moved to
+    # the nearest legal option), "floor_offer" (offer below the walk-away raised to
+    # it), "floor_accept" (below-walk-away accept turned into a floor counter).
+    adjust_kind: str | None = None
     # What the model literally tried, recorded whenever the move was adjusted.
     intended_action: str | None = None
     intended_outcome: dict[str, Any] | None = None
@@ -82,6 +90,23 @@ class Move:
     # agent produced them; None for scripted policies.
     raw_response: str | None = None
     reasoning: str | None = None
+    # Number of corrective re-asks the LLM agent needed this turn to produce a
+    # usable move (0 = got it on the first call). Recorded for audit and to detect
+    # a model that only complies under pressure; scripted policies leave it 0.
+    reask_count: int = 0
+    # A2A message channel: text the other party reads alongside this move (None =
+    # no message). Stored in full; delivery truncates to MESSAGE_MAX_CHARS and
+    # ``message_truncated`` records that it happened.
+    message: str | None = None
+    message_truncated: bool = False
+    # A policy constraint fired on this move, so its message was NOT delivered: it
+    # would quote the invalid terms the model tried, not the corrected ones played.
+    # The message is still kept here for audit.
+    message_withheld: bool = False
+    # Prompt tokens sent this turn and how many the provider served from its
+    # prompt cache (summed across re-asks/retries); 0 when not reported.
+    prompt_tokens: int = 0
+    cached_tokens: int = 0
 
 
 @runtime_checkable

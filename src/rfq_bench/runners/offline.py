@@ -150,12 +150,17 @@ def run_episode(
             rationale=e.rationale,
             adjusted=e.adjusted,
             adjust_reason=e.adjust_reason,
+            adjust_kind=e.adjust_kind,
             intended_action=e.intended_action,
             intended_outcome=e.intended_outcome,
             error=e.error,
             error_reason=e.error_reason,
             raw_response=e.raw_response,
             reasoning=e.reasoning,
+            reask_count=e.reask_count,
+            message=e.message,
+            message_truncated=e.message_truncated,
+            message_withheld=e.message_withheld,
         )
         for e in events
     ]
@@ -174,6 +179,13 @@ def run_episode(
         cost_usd_by_role[target] = agent_neg.total_cost
     if opp_neg.cost_reported:
         cost_usd_by_role[opp_role] = opp_neg.total_cost
+    # Prompt-cache accounting, only for sides that reported prompt tokens.
+    prompt_tokens_by_role: dict[Role, int] = {}
+    cached_tokens_by_role: dict[Role, int] = {}
+    for role, neg in ((target, agent_neg), (opp_role, opp_neg)):
+        if neg.total_prompt_tokens:
+            prompt_tokens_by_role[role] = neg.total_prompt_tokens
+            cached_tokens_by_role[role] = neg.total_cached_tokens
     # An unusable reply from EITHER side aborts the episode; it is excluded from
     # scoring (events are a shared log, so an opponent error is captured too).
     error_events = [e for e in events if e.error]
@@ -193,6 +205,8 @@ def run_episode(
         error_reason=error_reason,
         token_cost_by_role=token_cost_by_role,
         cost_usd_by_role=cost_usd_by_role,
+        prompt_tokens_by_role=prompt_tokens_by_role,
+        cached_tokens_by_role=cached_tokens_by_role,
     )
 
 
@@ -209,6 +223,8 @@ def _finalize(
     error_reason: str | None = None,
     token_cost_by_role: dict[Role, int] | None = None,
     cost_usd_by_role: dict[Role, float] | None = None,
+    prompt_tokens_by_role: dict[Role, int] | None = None,
+    cached_tokens_by_role: dict[Role, int] | None = None,
 ) -> Trace:
     scenario = spec.scenario
     zopa = compute_zopa(scenario)
@@ -258,6 +274,8 @@ def _finalize(
         persona=spec.persona,
         token_cost_by_role=token_cost_by_role or {},
         cost_usd_by_role=cost_usd_by_role or {},
+        prompt_tokens_by_role=prompt_tokens_by_role or {},
+        cached_tokens_by_role=cached_tokens_by_role or {},
         errored=errored,
         error_reason=error_reason,
         validity=validity,

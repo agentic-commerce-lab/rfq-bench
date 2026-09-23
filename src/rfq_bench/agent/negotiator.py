@@ -26,6 +26,7 @@ from typing import Any, Literal, Protocol
 from rfq_bench.agent.llm_client import LLMResponse
 from rfq_bench.agent.personas import persona_instruction
 from rfq_bench.agent.prompts import (
+    MESSAGE_MAX_CHARS,
     SYSTEM_PROMPT,
     build_move_tool,
     build_user_payload,
@@ -126,10 +127,21 @@ class LLMNegotiator:
         strict: bool = True,
         system_prompt: str = SYSTEM_PROMPT,
         instruction: str | None = None,
+        max_reasks: int = 0,
+        message_channel: bool = False,
     ) -> None:
         self.behavior = behavior
         self.behavior_kind: BehaviorKind = behavior_kind
         self._system_prompt = system_prompt
+        # A2A only: offer a public ``message`` field and show the other side's
+        # messages in the history. Off for --agent llm, whose scripted opponent
+        # can neither read nor reply.
+        self._message_channel = message_channel
+        # Bounded corrective re-asks for a reply with no usable move (0 = off). A
+        # re-ask is faithful: it re-elicits the model's own move under a stricter
+        # nudge, never fabricates one. Kept off by default so library/test
+        # construction stays single-shot; the CLI wires it from AgentSettings.
+        self._max_reasks = max(0, max_reasks)
         # Back-compat alias: callers/traces that expect ``.strategy`` still work
         # for the strategy side; it is None for a persona-driven negotiator.
         self.strategy = behavior if behavior_kind == "strategy" else None
@@ -147,32 +159,117 @@ class LLMNegotiator:
         self._strict = strict
 
     def act(self, standing_offer: dict[str, Any] | None, state: NegotiationState) -> Move:
-        user = build_user_payload(state, self._instruction, standing_offer)
-        tool = build_move_tool(state.issues, strict=self._strict)
-        resp = self._client.complete(self._system_prompt, user, tool)
-        move = self._interpret(resp.data, standing_offer, state)
-        move.token_cost = resp.tokens
-        move.cost_usd = resp.cost_usd
+        channel = self._message_channel
+        tool = build_move_tool(state.issues, strict=self._strict, message_channel=channel)
+        base_user = build_user_payload(
+            state, self._instruction, standing_offer, message_channel=channel
+        )
+
+        # Bounded re-ask loop: on a reply with no usable move, re-elicit the
+        # model's own move with a stricter corrective nudge (never a fabricated
+        # move). Token/USD cost accumulates across attempts — each is a real call.
+        total_tokens = 0
+        prompt_tokens = 0
+        cached_tokens = 0
+        total_cost = 0.0
+        cost_seen = False
+        attempt = 0
+        resp: LLMResponse
+        move: Move
+        while True:
+            user = base_user if attempt == 0 else base_user + self._reask_note(state)
+            resp = self._client.complete(self._system_prompt, user, tool)
+            total_tokens += resp.tokens
+            prompt_tokens += resp.prompt_tokens
+            cached_tokens += resp.cached_tokens
+            if resp.cost_usd is not None:
+                total_cost += resp.cost_usd
+                cost_seen = True
+            move = self._interpret(resp.data, standing_offer, state)
+            if not (self._is_reaskable(move, resp) and attempt < self._max_reasks):
+                break
+            logger.info(
+                "LLM agent %s no usable move (%s); re-asking (%d/%d)",
+                self.name,
+                move.error_reason,
+                attempt + 1,
+                self._max_reasks,
+            )
+            attempt += 1
+
+        move.token_cost = total_tokens
+        move.prompt_tokens = prompt_tokens
+        move.cached_tokens = cached_tokens
+        move.cost_usd = total_cost if cost_seen else None
+        move.reask_count = attempt
         rationale = resp.data.get("rationale")
         move.rationale = rationale if isinstance(rationale, str) and rationale else None
+        if channel and not move.error:
+            message = resp.data.get("message")
+            if isinstance(message, str) and message.strip():
+                move.message = message.strip()
+                move.message_truncated = len(move.message) > MESSAGE_MAX_CHARS
+                # A corrected move must not travel with a message quoting the
+                # invalid terms the model tried: withhold it (kept for audit).
+                move.message_withheld = move.adjusted
+        if move.adjusted:
+            logger.info(
+                "policy constraint fired for %s (%s): model sent %s %s, played %s %s%s",
+                self.name,
+                move.adjust_kind,
+                move.intended_action,
+                move.intended_outcome,
+                move.action,
+                move.outcome,
+                "; message withheld from the opponent" if move.message_withheld else "",
+            )
         move.raw_response = resp.content or None
         move.reasoning = resp.reasoning
         if move.error:
-            # Distinguish a harness-induced truncation (hit max_tokens) from a
-            # genuine model failure, and log enough to diagnose it.
-            if resp.finish_reason == "length":
+            # Distinguish an infrastructure failure (provider returned no
+            # completion, already retried by the client) and a harness-induced
+            # truncation (hit max_tokens) from a genuine model failure.
+            if resp.provider_error is not None:
+                move.error_reason = (
+                    f"provider returned no completion ({resp.finish_reason}): {resp.provider_error}"
+                )
+            elif resp.finish_reason == "length":
                 move.error_reason = (
                     "response truncated at max_tokens before a complete move "
                     "(raise RFQ_BENCH_MAX_TOKENS)"
                 )
             logger.error(
-                "LLM agent %s unusable move: %s | finish_reason=%s | raw=%.300s",
+                "LLM agent %s unusable move: %s | finish_reason=%s | reasks=%d | raw=%.300s",
                 self.name,
                 move.error_reason,
                 resp.finish_reason,
+                attempt,
                 resp.content or "<empty>",
             )
         return move
+
+    def _is_reaskable(self, move: Move, resp: LLMResponse) -> bool:
+        """A recoverable protocol/format failure worth re-eliciting.
+
+        Only errors where the model produced *something* but no usable move
+        (unparseable, missing an issue, a non-snappable value). Excluded:
+
+        - a truncation (``finish_reason == "length"``) — a budget problem;
+          re-asking under the same cap would just truncate again;
+        - a provider failure (``provider_error`` set) — the client already
+          retried the identical request with backoff, and the corrective note
+          ("your previous reply did not submit a usable move") would be false:
+          the model never replied.
+        """
+        return move.error and resp.finish_reason != "length" and resp.provider_error is None
+
+    def _reask_note(self, state: NegotiationState) -> str:
+        issues = ", ".join(i.name for i in state.issues)
+        return (
+            "\n\nYour previous reply did not submit a usable move. You MUST call the "
+            f"submit_move function now with a value for every issue ({issues}), or set "
+            "action to accept or terminate. Reply with the tool call only — no prose."
+        )
 
     def _interpret(
         self,
@@ -198,6 +295,7 @@ class LLMNegotiator:
                     "shop policy: cannot accept a deal below the reservation floor; "
                     "countered at the floor"
                 ),
+                adjust_kind="floor_accept",
                 intended_action="accept",
                 intended_outcome=standing_offer,
             )
@@ -223,6 +321,7 @@ class LLMNegotiator:
                 self._floor_offer(state),
                 adjusted=True,
                 adjust_reason="shop policy: offer below the reservation floor; raised to the floor",
+                adjust_kind="floor_offer",
                 intended_action="offer",
                 intended_outcome=raw,
             )
@@ -233,6 +332,7 @@ class LLMNegotiator:
                 adjusted=True,
                 adjust_reason="snapped off-grid value(s) to nearest legal tier: "
                 + ", ".join(notes),
+                adjust_kind="snap",
                 intended_action="offer",
                 intended_outcome=raw,
             )

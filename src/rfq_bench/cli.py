@@ -457,6 +457,8 @@ def run(
                 strict=strict,
                 system_prompt=seller_prompt,
                 instruction=strategy_instruction(spec.strategy, strat_guidance),
+                max_reasks=settings.max_reasks,
+                message_channel=True,  # both LLM sides can talk to each other
             )
             opponent_factory = lambda spec: LLMNegotiator(  # noqa: E731
                 spec.persona or "neutral",
@@ -465,6 +467,8 @@ def run(
                 strict=strict,
                 system_prompt=buyer_prompt,
                 instruction=persona_instruction(spec.persona or "neutral", persona_guidance),
+                max_reasks=settings.max_reasks,
+                message_channel=True,
             )
         else:
             agent_factory = lambda spec: LLMNegotiator(  # noqa: E731
@@ -474,6 +478,7 @@ def run(
                 strict=strict,
                 system_prompt=settings.system_prompt_for(spec.target_role),
                 instruction=strategy_instruction(spec.strategy, strat_guidance),
+                max_reasks=settings.max_reasks,
             )
     elif agent == "laya":
         from rfq_bench.agent.laya_client import LayaClient
@@ -697,6 +702,11 @@ def report(
         )
         typer.echo("")
         typer.echo(buyer_rep.render())
+    # Prompt-cache hit rate and A2A message activity (only when the traces have them).
+    from rfq_bench.report.usage import usage_summary
+
+    for line in usage_summary(all_traces):
+        typer.echo(line)
 
 
 @app.command()

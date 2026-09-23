@@ -27,14 +27,11 @@ def test_opponent_private_values_absent_from_payload(multi_issue_scenario) -> No
     allowed = {
         "your_role",
         "issues",
-        "your_priorities",
         "your_walk_away",
-        "round",
-        "deadline_rounds",
-        "standing_offer_from_opponent",
-        "opponent_offer_history",
-        "your_offer_history",
         "approach_instruction",
+        "history",
+        "rounds_left",
+        "standing_offer_from_opponent",
     }
     assert set(data) == allowed
     assert data["your_role"] == "buyer"
@@ -44,10 +41,11 @@ def test_opponent_private_values_absent_from_payload(multi_issue_scenario) -> No
     assert "utilit" not in payload.lower()
     assert "weight" not in payload.lower()
     assert "batna" not in payload.lower()
-    # Only business-terms fields: options, preference order, importance labels.
-    for pv in data["your_priorities"]:
-        assert set(pv) == {"issue", "unit", "options", "you_prefer_in_order", "importance"}
-        assert pv["importance"] in {"high", "medium", "low"}
+    # Only business-terms fields: options in preference order, importance labels.
+    for iv in data["issues"]:
+        assert set(iv) <= {"name", "unit", "options_best_first", "importance"}
+        assert iv["importance"] in {"high", "medium", "low"}  # multi-issue: always present
+    assert set(data["your_walk_away"]) == {"break_even_package"}
 
 
 def test_payload_exposes_public_issue_space(multi_issue_scenario) -> None:
@@ -96,6 +94,59 @@ def test_persona_guidance_is_pure_disposition() -> None:
         assert "batna" not in low
 
 
+def test_effective_guidance_including_md_files_has_no_economics_vocabulary() -> None:
+    """The guidance that actually runs — built-ins plus prompts/{strategies,personas}/*.md
+    — goes into every payload, so the md files are held to the same rule."""
+    from rfq_bench.agent.personas import load_persona_guidance
+    from rfq_bench.agent.prompts import load_strategy_guidance
+
+    effective = {**load_strategy_guidance(), **load_persona_guidance()}
+    for name, text in effective.items():
+        low = text.lower()
+        for word in ("utilit", "weight", "batna"):
+            assert word not in low, f"guidance {name!r} contains {word!r}"
+
+
+def _state_with_history(scenario, role, history):
+    return NegotiationState(
+        role=role,
+        prefs=scenario.preferences(role),
+        issues=list(scenario.issues),
+        round=2,
+        deadline=scenario.deadline_rounds,
+        history=history,
+    )
+
+
+def test_history_is_viewer_relative_and_names_no_role(multi_issue_scenario) -> None:
+    offer = {"price": 150, "delivery_days": 14, "warranty_months": 12}
+    history = [
+        {"round": 0, "by": "buyer", "offer": offer, "message": None},
+        {"round": 0, "by": "seller", "offer": offer, "message": None},
+    ]
+    payload = build_user_payload(
+        _state_with_history(multi_issue_scenario, "buyer", history), "x", offer
+    )
+    data = json.loads(payload)
+    assert [h[0] for h in data["history"]] == ["you", "them"]
+    assert "seller" not in payload.lower()
+
+
+def test_messages_are_delivered_only_with_the_channel_and_truncated(multi_issue_scenario) -> None:
+    from rfq_bench.agent.prompts import MESSAGE_MAX_CHARS
+
+    offer = {"price": 150, "delivery_days": 14, "warranty_months": 12}
+    long = "a" * (MESSAGE_MAX_CHARS + 50)
+    history = [{"round": 0, "by": "seller", "offer": offer, "message": long}]
+    state = _state_with_history(multi_issue_scenario, "buyer", history)
+
+    off = json.loads(build_user_payload(state, "x", offer))
+    assert off["history"][0] == ["them", offer]  # --agent llm: no channel, nothing shown
+
+    on = json.loads(build_user_payload(state, "x", offer, message_channel=True))
+    assert on["history"][0] == ["them", offer, "a" * MESSAGE_MAX_CHARS]
+
+
 def test_unknown_persona_falls_back_but_get_persona_raises() -> None:
     assert persona_instruction("nope") == PERSONA_GUIDANCE["neutral"]
     from rfq_bench.agent.personas import get_persona
@@ -106,3 +157,20 @@ def test_unknown_persona_falls_back_but_get_persona_raises() -> None:
         assert "unknown persona" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("get_persona should raise on an unknown name")
+
+
+def test_single_issue_walk_away_states_its_direction(single_issue_scenario) -> None:
+    """A buyer's price limit is a ceiling, a seller's a floor — stated, not implied."""
+    for role, expected in (
+        ("buyer", {"price": {"at_most": 110}}),
+        ("seller", {"price": {"at_least": 90}}),
+    ):
+        state = NegotiationState(
+            role=role,
+            prefs=single_issue_scenario.preferences(role),
+            issues=list(single_issue_scenario.issues),
+            round=0,
+            deadline=single_issue_scenario.deadline_rounds,
+        )
+        payload = json.loads(build_user_payload(state, "x", None))
+        assert payload["your_walk_away"] == expected

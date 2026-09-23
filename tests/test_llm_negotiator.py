@@ -186,3 +186,115 @@ def test_genuine_error_is_not_labeled_truncation(multi_issue_scenario) -> None:
     move = LLMNegotiator("linear", _FinishClient("stop")).act(None, _state(multi_issue_scenario))
     assert move.error is True
     assert "truncat" not in (move.error_reason or "").lower()
+
+
+class _ScriptedClient:
+    """Returns a queued LLMResponse per call, so a re-ask sees the next reply."""
+
+    def __init__(self, responses: list[LLMResponse]) -> None:
+        self._responses = list(responses)
+        self.calls = 0
+
+    def complete(self, system: str, user: str, tool: dict) -> LLMResponse:
+        resp = self._responses[min(self.calls, len(self._responses) - 1)]
+        self.calls += 1
+        return resp
+
+
+def _good_offer_data() -> dict:
+    return {"action": "offer", "price": 150, "delivery_days": 7, "warranty_months": 24}
+
+
+def test_reask_recovers_after_empty_reply(multi_issue_scenario) -> None:
+    # First reply has no usable move (reasoning-as-content); the re-ask succeeds.
+    client = _ScriptedClient(
+        [
+            LLMResponse(data={}, tokens=10, finish_reason="stop"),
+            LLMResponse(data=_good_offer_data(), tokens=20, finish_reason="tool_calls"),
+        ]
+    )
+    move = LLMNegotiator("linear", client, max_reasks=2).act(None, _state(multi_issue_scenario))
+    assert client.calls == 2
+    assert move.error is False and move.action == "offer"
+    assert move.reask_count == 1
+    assert move.token_cost == 30  # cost accrues across both billed calls
+
+
+def test_reask_exhausts_then_errors(multi_issue_scenario) -> None:
+    client = _ScriptedClient([LLMResponse(data={}, tokens=5, finish_reason="stop")])
+    move = LLMNegotiator("linear", client, max_reasks=2).act(None, _state(multi_issue_scenario))
+    assert client.calls == 3  # initial + 2 re-asks
+    assert move.error is True
+    assert move.reask_count == 2
+    assert move.token_cost == 15  # every attempt is billed
+
+
+def test_reask_disabled_by_default(multi_issue_scenario) -> None:
+    client = _ScriptedClient([LLMResponse(data={}, tokens=5, finish_reason="stop")])
+    move = LLMNegotiator("linear", client).act(None, _state(multi_issue_scenario))
+    assert client.calls == 1  # no re-ask when max_reasks defaults to 0
+    assert move.error is True and move.reask_count == 0
+
+
+def test_truncation_is_not_reasked(multi_issue_scenario) -> None:
+    # A length truncation is a budget problem, not a format one — do not re-ask.
+    client = _ScriptedClient([LLMResponse(data={}, tokens=5, finish_reason="length")])
+    move = LLMNegotiator("linear", client, max_reasks=3).act(None, _state(multi_issue_scenario))
+    assert client.calls == 1
+    assert move.error is True and move.reask_count == 0
+    assert "truncat" in (move.error_reason or "").lower()
+
+
+def test_provider_failure_is_not_reasked(multi_issue_scenario) -> None:
+    # The client already retried the identical request; a corrective re-ask
+    # ("your previous reply…") would be false — the model never replied.
+    failed = LLMResponse(
+        data={}, tokens=3, finish_reason="no_choices", provider_error="502: upstream error"
+    )
+    client = _ScriptedClient([failed])
+    move = LLMNegotiator("linear", client, max_reasks=2).act(None, _state(multi_issue_scenario))
+    assert client.calls == 1
+    assert move.error is True and move.reask_count == 0
+    assert "provider returned no completion" in (move.error_reason or "")
+    assert "502: upstream error" in (move.error_reason or "")
+
+
+def test_reask_note_lists_issue_names(multi_issue_scenario) -> None:
+    captured: list[str] = []
+
+    class _CapturingClient:
+        def complete(self, system: str, user: str, tool: dict) -> LLMResponse:
+            captured.append(user)
+            return LLMResponse(data={}, tokens=1, finish_reason="stop")
+
+    LLMNegotiator("linear", _CapturingClient(), max_reasks=1).act(
+        None, _state(multi_issue_scenario)
+    )
+    assert len(captured) == 2  # initial + one re-ask
+    assert "submit_move" not in captured[0]  # first ask is the plain payload
+    assert "submit_move" in captured[1]  # the re-ask carries the corrective note
+    for name in ("price", "delivery_days", "warranty_months"):
+        assert name in captured[1]
+
+
+def test_each_policy_constraint_is_tagged_with_its_kind(multi_issue_scenario) -> None:
+    snap = _act(
+        multi_issue_scenario,
+        {"action": "offer", "outcome": {"price": 190, "delivery_days": 7, "warranty_months": 24}},
+    )
+    below = _act(
+        multi_issue_scenario,
+        {"action": "offer", "outcome": {"price": 200, "delivery_days": 30, "warranty_months": 6}},
+    )
+    bad = {"price": 200, "delivery_days": 30, "warranty_months": 6}
+    accept = _act(multi_issue_scenario, {"action": "accept", "outcome": None}, standing=bad)
+    assert (snap.adjust_kind, below.adjust_kind, accept.adjust_kind) == (
+        "snap",
+        "floor_offer",
+        "floor_accept",
+    )
+    clean = _act(
+        multi_issue_scenario,
+        {"action": "offer", "outcome": {"price": 150, "delivery_days": 7, "warranty_months": 24}},
+    )
+    assert clean.adjust_kind is None
