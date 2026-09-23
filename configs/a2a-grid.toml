@@ -27,8 +27,8 @@ personas    = ["neutral", "cost_focused", "total_value", "reliability_first", "r
 
 first_speakers = ["buyer"]                # customer always opens
 seeds       = [0]
-max_rounds  = 8                           # caps rounds/episode; remove for final numbers
-concurrency = 6
+max_rounds  = 16                           # caps rounds/episode; remove for final numbers
+concurrency = 12
 retries     = 2
 overwrite   = true
 

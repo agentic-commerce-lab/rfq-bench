@@ -17,8 +17,8 @@
 agent       = "a2a"
 
 scenarios   = ["single_price_a"]          # one single-issue scenario (fast, hand-checkable)
-strategies  = ["control", "boulware"]     # seller side; `control` = seller Δ baseline
-personas    = ["neutral", "hardball"]     # buyer side; `neutral` = buyer Δ baseline
+strategies  = ["control", "boulware"]          # seller side; `control` = seller Δ baseline
+personas    = ["neutral", "cost_focused"]      # buyer side; `neutral` = buyer Δ baseline
 seeds       = [0]
 
 max_rounds  = 6                           # cap rounds/episode to keep LLM calls (and cost) low

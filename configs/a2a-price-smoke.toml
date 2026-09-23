@@ -1,0 +1,45 @@
+# A2A self-play SMOKE test for configs/a2a-price.toml — the same setup, fewer episodes.
+#
+# Run with:   uv run rfq-bench run       --config configs/a2a-price-smoke.toml
+# Score with: uv run rfq-bench report    --config configs/a2a-price-smoke.toml
+#             uv run rfq-bench dashboard --config configs/a2a-price-smoke.toml
+#
+# Mirrors the full price grid: same scenario data, all five price-suite buyer personas,
+# the buyer always opens, and no round cap (full 16-round deadlines, which
+# time_pressured reacts to). Only the scenarios and strategies are cut down.
+#
+# Use it before the full grid to confirm, for the model in .env: tool calling works,
+# both sides use the message channel, every persona behaves sensibly, the report prints
+# the prompt-cache and messages lines, and walk-aways happen on the no-ZOPA case. The run
+# plan shows a cost estimate before you confirm.
+#
+# Matrix: scenarios x strategies x personas x first-speakers x seeds
+#       = 2 x 2 x 5 x 1 x 1 = 20 episodes   (full grid: 8 x 6 x 5 = 240).
+# - price_odd: a ZOPA with non-round prices (a deal is expected).
+# - price_nozopa_near: no ZOPA, missed by one price step (walking away is correct).
+# - `control` (strategy) and `neutral` (persona) are the two Δ baselines — keep them.
+
+[run]
+agent       = "a2a"
+data        = "data/scenarios_price"
+
+scenarios   = ["price_odd", "price_nozopa_near"]
+strategies  = ["control", "boulware"]     # seller side; `control` = seller Δ baseline
+
+# Same buyer personas as configs/a2a-price.toml (neutral is the buyer-Δ baseline).
+personas    = ["neutral", "cost_focused", "relationship_focused", "supply_security", "time_pressured"]
+
+first_speakers = ["buyer"]                # customer always opens, as in the full grid
+seeds       = [0]
+concurrency = 10                          # as in the full grid
+retries     = 2
+overwrite   = true
+
+out           = "results/a2a_price_smoke.jsonl"   # own file; never touches the full grid's output
+dashboard     = true
+dashboard_out = "results/a2a_price_smoke_dashboard.html"
+
+[dashboard]
+control = "control"                       # seller-side Δ baseline (buyer side uses `neutral`)
+n_boot  = 500
+seed    = 0

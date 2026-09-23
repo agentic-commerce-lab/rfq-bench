@@ -15,8 +15,8 @@
 #
 # The buyer personas are defined by markdown files in prompts/personas/ (cost_focused,
 # total_value, reliability_first, relationship_focused), written to the scenarios'
-# actual issues (price / delivery / warranty). The shared buyer instruction is
-# prompts/system_buyer.md. `neutral` is the built-in Δ baseline.
+# actual issues (price / delivery / warranty). Both sides share the packaged system
+# prompt (no per-role override). `neutral` is the built-in Δ baseline.
 
 [run]
 agent       = "a2a"                       # LLM buyer persona vs LLM seller strategy

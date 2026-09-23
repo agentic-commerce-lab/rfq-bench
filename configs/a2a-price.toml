@@ -1,0 +1,79 @@
+# A2A self-play — price-only grid on the price-v1 suite.
+#
+# Run with:  uv run rfq-bench run --config configs/a2a-price.toml
+# Score with: uv run rfq-bench report    --config configs/a2a-price.toml
+#             uv run rfq-bench dashboard --config configs/a2a-price.toml
+# (--config picks up the traces, data dir, dashboard path and [dashboard] settings below;
+#  add e.g. --traces/--out to point at a per-model run instead.)
+#
+# Scenarios live in data/scenarios_price/price_v1.json: 21 price tiers each, linear
+# utilities, walk-aways exactly on a tier, so every q is hand-checkable. Six have a
+# ZOPA (wide/narrow, skewed low/high, non-round, high-value) and two have none, where
+# the correct outcome is to walk away (the walk✓ column).
+#
+# Matrix: scenarios x strategies x personas x first-speakers x seeds
+#   = 8 x 6 x 5 x 1 x 1 = 240 episodes.
+#
+# Deliberate choices:
+# - No `logrolling`: it trades across issues, meaningless with price alone.
+# - Price-relevant buyer personas only. total_value and reliability_first are left out:
+#   their defining trade-off (price vs delivery/warranty) doesn't exist with price as
+#   the only issue — in the earlier price run they were indistinguishable from neutral.
+#   They stay in a2a-grid.toml, where the trade-offs exist. Instead:
+#   - supply_security: the single-issue form of the risk persona — ending without a
+#     deal is the loss to avoid, so it pays a premium for certainty.
+#   - time_pressured: delay is costly; increasingly willing to pay more near the deadline.
+#   (relationship_focused keeps its price-relevant core: cooperative, not aggressive.)
+# - The buyer (customer) always opens, as in a2a-grid.toml.
+# - One seed: the episode seed is recorded in the trace but never sent to the model
+#   (every request uses RFQ_BENCH_SEED at temperature 0), so extra seeds repeat the
+#   same requests rather than adding independent samples. Replication comes from the
+#   8 scenarios instead; the dashboard's CI is clustered by scenario.
+# - No `max_rounds`: episodes run to the scenario deadline (16 rounds) for
+#   full-fidelity numbers.
+#
+# Ground truth: run the same suite with the deterministic scripted agent and compare,
+#   uv run rfq-bench run --agent scripted --data data/scenarios_price \
+#       --strategies control,boulware,linear,conceder,tit_for_tat,anchoring \
+#       --out results/scripted_price.jsonl \
+#       --dashboard-out results/scripted_price_dashboard.html
+#   (without --dashboard-out it overwrites the default results/dashboard.html)
+
+[run]
+agent       = "a2a"
+data        = "data/scenarios_price"
+
+scenarios   = [
+  "price_wide_sym", "price_narrow", "price_skew_low", "price_skew_high",
+  "price_odd", "price_contract", "price_nozopa_gap", "price_nozopa_near",
+]
+
+# Seller strategies (control is the Δ baseline).
+strategies  = ["control", "boulware", "linear", "conceder", "tit_for_tat", "anchoring"]
+
+# Buyer personas (neutral is the buyer-Δ baseline).
+personas    = ["neutral", "cost_focused", "relationship_focused", "supply_security", "time_pressured"]
+
+first_speakers = ["buyer"]                # customer always opens
+seeds       = [0]
+# OpenRouter sets no request-rate limit on this (paid) key; the ceiling is the upstream
+# provider of whichever model RFQ_BENCH_MODEL selects (Inception 502'd at 12; transient
+# retries absorb occasional ones). Turns within an episode are sequential, so requests
+# in flight ≈ concurrency. If `grep -c "provider returned no completion"` on the run
+# log stays 0, try 16 — worth it for slower models (Gemini flash ~3x DeepSeek per turn).
+#
+# The model comes from .env, not this file. Give each model its own output, e.g.
+#   --out results/a2a_price_deepseek.jsonl --dashboard-out results/a2a_price_deepseek.html
+# (overwrite = true would otherwise replace the previous model's results).
+concurrency = 30
+retries     = 2
+overwrite   = true
+
+out           = "results/a2a_price.jsonl"
+dashboard     = true
+dashboard_out = "results/a2a_price_dashboard.html"
+
+[dashboard]
+control = "control"                       # seller-side Δ baseline (buyer side uses `neutral`)
+n_boot  = 2000
+seed    = 0
