@@ -28,6 +28,7 @@ from rfq_bench.core.utility import (
     worst_utility,
 )
 from rfq_bench.core.zopa import compute_zopa
+from rfq_bench.report.fidelity import DEFAULT_TOLERANCE, episode_fidelity
 from rfq_bench.report.metrics import best_price, revenue
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -93,6 +94,36 @@ def _revenue_fields(scenario: Scenario, agreement: dict[str, Any] | None) -> dic
     return {"revenue": r, "revenue_share": (r / best) if (r is not None and best) else None}
 
 
+def _fidelity_payload(trace: Trace, scenario: Scenario) -> dict[str, Any] | None:
+    """Per-episode strategy-fidelity data (see ``report/fidelity.py``).
+
+    Raw per-offer checks plus counts, so the browser can pool them over any
+    filtered subset exactly as ``rfq-bench report`` pools them over an arm.
+    None when the episode is not checkable (unknown strategy, errored, degenerate).
+    """
+    ep = episode_fidelity(trace, scenario)
+    if ep is None:
+        return None
+    return {
+        "offers": [
+            {
+                "round": o.round,
+                "progress": o.progress,
+                "gap": o.gap,
+                "level": o.agent_level,
+                "ref_level": o.reference_level,
+                "ref_outcome": o.reference_outcome,
+            }
+            for o in ep.offers
+        ],
+        "early": ep.early_accepts,
+        "missed": ep.missed_accepts,
+        "decisions": ep.accept_decisions,
+        "beta": ep.fitted_beta,
+        "ref_beta": ep.reference_beta,
+    }
+
+
 def _episode_payload(trace: Trace, scenario: Scenario) -> dict[str, Any]:
     scored = score_trace(trace, scenario)
     # Also score the OTHER party (buyer, in A2A the persona/opponent side) so the
@@ -153,6 +184,7 @@ def _episode_payload(trace: Trace, scenario: Scenario) -> dict[str, Any]:
             role: sum(1 for s in trace.steps if s.adjusted and s.party == role)
             for role in ("buyer", "seller")
         },
+        "fidelity": _fidelity_payload(trace, scenario),
         "steps": steps,
     }
 
@@ -191,6 +223,7 @@ def build_payload(
             "control": control,
             "buyer_control": buyer_control,
             "has_a2a": has_a2a,
+            "fidelity_tolerance": DEFAULT_TOLERANCE,
             "n_boot": n_boot,
             "seed": seed,
             "n_episodes": len(episodes),

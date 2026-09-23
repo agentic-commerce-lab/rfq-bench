@@ -352,3 +352,24 @@ def test_render_is_self_contained(traces: list, scenarios: dict[str, Scenario]) 
     blob = html[html.index(">", start) + 1 : html.index("</script>", start)]
     data = json.loads(blob.replace("<\\/", "</"))
     assert data["meta"]["n_episodes"] == len(traces)
+
+
+def test_fidelity_reaches_payload_and_matches_report(
+    traces: list, scenarios: dict[str, Scenario]
+) -> None:
+    from rfq_bench.report.fidelity import build_fidelity_report
+
+    payload = build_payload(traces, scenarios)
+    eps = payload["episodes"]
+    assert all(e["fidelity"] is not None for e in eps)
+    # Scripted agents are the strategy: every offer sits on the reference.
+    offers = [o for e in eps for o in e["fidelity"]["offers"]]
+    assert offers and all(o["gap"] == pytest.approx(0.0, abs=1e-12) for o in offers)
+    # Pooling the payload per arm reproduces the text report's counts.
+    rep = build_fidelity_report(traces, scenarios)
+    for arm in rep.arms:
+        mine = [e for e in eps if e["strategy"] == arm.strategy]
+        assert len(mine) == arm.n_episodes
+        assert sum(len(e["fidelity"]["offers"]) for e in mine) == arm.n_offers
+    assert payload["meta"]["fidelity_tolerance"] == rep.tolerance
+    assert 'id="fidPanel"' in build_dashboard(traces, scenarios)

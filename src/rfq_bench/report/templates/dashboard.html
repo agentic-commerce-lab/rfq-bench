@@ -202,6 +202,12 @@ tbody tr.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 va
   margin-right: 5px; vertical-align: middle; background: var(--sw, #888); }
 .pill { font-size: 11px; padding: 1px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
 .uplot { font-family: system-ui, sans-serif; }
+/* strategy fidelity: table + concession curve side by side */
+.fidgrid { display: grid; grid-template-columns: 1.25fr 1fr; gap: 16px; }
+.fidgrid > * { min-width: 0; }
+@media (max-width: 900px) { .fidgrid { grid-template-columns: 1fr; } }
+.legend span.dash::before { height: 0; border-top: 2px dashed var(--sw, #888); background: none;
+  border-radius: 0; }
 </style>
 </head>
 <body>
@@ -286,6 +292,44 @@ tbody tr.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 va
       </p>
     </section>
   </div>
+
+  <!-- STRATEGY FIDELITY -->
+  <section class="panel" id="fidPanel" hidden>
+    <div class="head">
+      <h2>Strategy fidelity</h2>
+      <span class="hint">manipulation check: does the tested agent play the strategy it was given? · never folded into the score</span>
+    </div>
+    <div class="fidgrid">
+      <div style="overflow:auto">
+        <table id="fidTable">
+          <thead><tr>
+            <th class="sortable" data-k="strategy">strategy</th>
+            <th class="sortable" data-k="open" title="first offer − the strategy's first offer, as a share of the agent's BATNA→ideal range (+ = tougher, − = conceded more)">open</th>
+            <th class="sortable" data-k="bias" title="mean signed gap over all offers: agent offer − the offer the strategy would make (+ = tougher, − = conceded more)">bias</th>
+            <th class="sortable" data-k="absGap" title="mean absolute gap over all offers">|gap|</th>
+            <th class="sortable" data-k="onTgt" id="fidTolHead">on-tgt</th>
+            <th class="sortable" data-k="early" title="accepted although the strategy would not have, per accept decision">early✗</th>
+            <th class="sortable" data-k="missed" title="countered or walked although the strategy would have accepted, per accept decision">missed✗</th>
+            <th class="sortable" data-k="beta" title="median concession shape fitted to the agent's offers (&lt;1 holds then concedes late, &gt;1 concedes early); needs ≥ 3 offers">β fit</th>
+            <th class="sortable" data-k="refBeta" title="the same fit on the strategy's reference offers">β ref</th>
+            <th class="sortable" data-k="n">n</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div>
+        <h3 id="fidCurveTitle">Concession curve</h3>
+        <div class="uholder" id="fidCurve"></div>
+        <div class="legend" id="fidLegend"></div>
+      </div>
+    </div>
+    <p class="hint" style="margin:10px 2px 0">
+      Each turn, the arm's registry definition is replayed over the actual history and compared with what the agent did.
+      Gaps are shares of the agent's BATNA→ideal range. Scripted agents score zero gap by construction.
+      If arms differ in Δ but share one fidelity profile, the model is not differentiating the strategies.
+      Click a row to plot its curve.
+    </p>
+  </section>
 
   <!-- COST OVERVIEW -->
   <section class="panel" id="costPanel" hidden>
@@ -481,6 +525,8 @@ let selectedEpisode = null;
 let episodeSort = {k:"q", dir:-1};
 let boardSort = {k:"delta", dir:-1};
 let trackSort = {k:"strategy", dir:1};
+let fidSort = {k:"strategy", dir:1};
+let fidArm = null; // arm whose concession curve is plotted
 let searchTerm = "";
 
 function passFilters(e){
@@ -595,6 +641,7 @@ function renderAll(){
   $("#filterCount").textContent = `${eps.length} of ${EPS.length} episodes selected`;
   renderLeaderboard(eps);
   renderTracks(eps);
+  renderFidelity(eps);
   renderCost(eps);
   renderHeatmap(eps);
   renderEpisodes(eps);
@@ -671,6 +718,90 @@ function renderTracks(eps){
       <td class="num">${r.policy>0?`<span class="neg">${fmt(r.policy,2)}</span>`:'<span class="muted">0</span>'}</td>`;
     tb.appendChild(tr);
   }
+}
+
+/* ---------- strategy fidelity (mirror report/fidelity.py, pooled per arm) ---------- */
+/* Always the tested agent's strategy (the treatment), whichever side is scored. */
+const median = a => { if (!a.length) return NaN; const s=a.slice().sort((x,y)=>x-y), m=s.length>>1;
+  return s.length%2 ? s[m] : (s[m-1]+s[m])/2; };
+function computeFidelity(eps){
+  const tol = META.fidelity_tolerance ?? 0.1;
+  const groups = {};
+  for (const e of eps) if (e.fidelity) (groups[e.strategy] ||= []).push(e);
+  return Object.entries(groups).map(([s, list])=>{
+    const gaps = list.flatMap(e=>e.fidelity.offers.map(o=>o.gap));
+    const opens = list.filter(e=>e.fidelity.offers.length).map(e=>e.fidelity.offers[0].gap);
+    const dec = list.reduce((a,e)=>a+e.fidelity.decisions,0);
+    const fits = list.filter(e=>e.fidelity.beta!=null);
+    return { strategy:s, n:list.length,
+      open: opens.length ? mean(opens) : NaN,
+      bias: gaps.length ? mean(gaps) : NaN,
+      absGap: gaps.length ? mean(gaps.map(Math.abs)) : NaN,
+      onTgt: gaps.length ? gaps.filter(g=>Math.abs(g)<=tol+1e-9).length/gaps.length : NaN,
+      early: dec ? list.reduce((a,e)=>a+e.fidelity.early,0)/dec : NaN,
+      missed: dec ? list.reduce((a,e)=>a+e.fidelity.missed,0)/dec : NaN,
+      beta: median(fits.map(e=>e.fidelity.beta)),
+      refBeta: median(fits.filter(e=>e.fidelity.ref_beta!=null).map(e=>e.fidelity.ref_beta)),
+    };
+  });
+}
+function renderFidelity(eps){
+  const panel = $("#fidPanel");
+  const rows0 = computeFidelity(eps);
+  panel.hidden = !EPS.some(e=>e.fidelity);
+  if (panel.hidden) return;
+  const tol = META.fidelity_tolerance ?? 0.1;
+  const th = $("#fidTolHead");
+  th.title = `share of offers within ±${tol.toFixed(2)} of the strategy's offer`;
+  const rows = sortRows(rows0, fidSort, {strategy:r=>r.strategy});
+  if (!rows.some(r=>r.strategy===fidArm)) fidArm = rows.length ? rows[0].strategy : null;
+  const gapCell = x => Number.isNaN(x) ? '<span class="muted">—</span>'
+    : `<span class="${Math.abs(x)>tol?'neg':''}">${signed(x,2)}</span>`;
+  // Flag accept-rule violation rates from 5% up (tiny rates round to "0%").
+  const rate = x => x>=0.05 ? `<span class="neg">${pct(x)}</span>` : pct(x);
+  const beta = x => Number.isNaN(x) ? '<span class="muted">—</span>' : (x<0.1 ? x.toFixed(3) : x.toFixed(2));
+  const tb = $("#fidTable tbody"); tb.innerHTML = "";
+  for (const r of rows){
+    const tr = document.createElement("tr"); tr.className = "clickable";
+    if (r.strategy===fidArm) tr.classList.add("selected");
+    tr.innerHTML = `<td${tipAttr("strategy", r.strategy)}>${r.strategy}</td>
+      <td class="num">${gapCell(r.open)}</td>
+      <td class="num">${gapCell(r.bias)}</td>
+      <td class="num">${Number.isNaN(r.absGap)?'<span class="muted">—</span>':fmt(r.absGap,2)}</td>
+      <td class="num">${pct(r.onTgt)}</td>
+      <td class="num">${rate(r.early)}</td>
+      <td class="num">${rate(r.missed)}</td>
+      <td class="num">${beta(r.beta)}</td>
+      <td class="num muted">${beta(r.refBeta)}</td>
+      <td class="num muted">${r.n}</td>`;
+    tr.onclick = () => { fidArm = r.strategy; renderFidelity(filteredEpisodes()); };
+    tb.appendChild(tr);
+  }
+  renderFidCurve(eps);
+}
+/* Mean normalized own-utility (0 = BATNA, 1 = ideal) by deadline progress,
+   agent vs the strategy's reference, for the selected arm. */
+let fidPlot = null;
+function renderFidCurve(eps){
+  if (fidPlot){ const i=uplots.indexOf(fidPlot); if (i>=0) uplots.splice(i,1); try{fidPlot.destroy()}catch(e){} fidPlot=null; }
+  const host = $("#fidCurve"); host.innerHTML = "";
+  $("#fidCurveTitle").textContent = fidArm ? `Concession curve · ${fidArm}` : "Concession curve";
+  const offers = eps.filter(e=>e.fidelity && e.strategy===fidArm).flatMap(e=>e.fidelity.offers);
+  if (!offers.length){ host.innerHTML = '<div class="empty">no offers in the selection</div>'; $("#fidLegend").innerHTML=""; return; }
+  const BINS = 10, ag = Array.from({length:BINS}, ()=>[]), rf = Array.from({length:BINS}, ()=>[]);
+  for (const o of offers){ const b = Math.min(BINS-1, Math.floor(o.progress*BINS)); ag[b].push(o.level); rf[b].push(o.ref_level); }
+  const xs = ag.map((_,i)=>(i+0.5)/BINS);
+  const ya = ag.map(a=>a.length?mean(a):null), yr = rf.map(a=>a.length?mean(a):null);
+  const vals = [...ya, ...yr].filter(v=>v!=null);
+  const agentC = cssVar("--accent"), refC = cssVar("--muted");
+  const opts = baseOpts(host.clientWidth||420, 200, {
+    scales:{x:{time:false, range:[0,1]}, y:{range:[Math.min(0, ...vals), Math.max(1, ...vals)]}},
+    series:[{}, mkSeries("agent", agentC), Object.assign(mkSeries("strategy", refC), {dash:[6,4]})],
+  });
+  fidPlot = new uPlot(opts, [xs, ya, yr], host); uplots.push(fidPlot);
+  $("#fidLegend").innerHTML = `<span style="--sw:${agentC}">agent (mean own-utility level)</span>`
+    + `<span class="dash" style="--sw:${refC}">strategy reference</span>`
+    + `<span style="--sw:transparent">x = deadline progress · y: 0 = BATNA, 1 = ideal · ${offers.length} offers</span>`;
 }
 
 function fmtUsd(x){ return "$" + (x < 0.01 ? x.toFixed(5) : x.toFixed(4)); }
@@ -863,7 +994,11 @@ function validityFlags(e){
 
 /* ---------- replay ---------- */
 let uplots = [];
-function destroyPlots(){ uplots.forEach(p=>{try{p.destroy()}catch(e){}}); uplots=[]; }
+function destroyPlots(){
+  // Replay plots only; the fidelity curve lives outside the replay card.
+  uplots.filter(p=>p!==fidPlot).forEach(p=>{try{p.destroy()}catch(e){}});
+  uplots = fidPlot ? [fidPlot] : [];
+}
 // uPlot renders at a fixed pixel width; without this a window resize leaves the
 // canvas wider than its (now narrower) column and overflows the replay card.
 let _plotResizeT = null;
@@ -924,7 +1059,8 @@ function renderReplay(e){
     <div class="k">rounds to close</div><div class="v">${e.rounds_to_close}</div>
     <div class="k">latency</div><div class="v">${(e.latency_s*1000).toFixed(2)} ms</div>
     <div class="k">token cost</div><div class="v">${e.token_cost}</div>
-    <div class="k">cost</div><div class="v">${e.cost_usd!=null ? "$"+e.cost_usd.toFixed(5)+" <span class=\"muted\">(real)</span>" : "<span class=\"muted\">not reported</span>"}</div>`;
+    <div class="k">cost</div><div class="v">${e.cost_usd!=null ? "$"+e.cost_usd.toFixed(5)+" <span class=\"muted\">(real)</span>" : "<span class=\"muted\">not reported</span>"}</div>`
+    + fidelityKV(e);
   // q formula
   const I=prof.ideal, d=prof.batna;
   const q = e.degenerate? null : Math.max(0, Math.min(1,(U-d)/(I-d)));
@@ -951,6 +1087,18 @@ function renderReplay(e){
   setCursor(e, e.steps.length-1);
 }
 
+function fidelityKV(e){
+  const f = e.fidelity;
+  if (!f) return `<div class="k">strategy fidelity</div><div class="v muted">not checkable</div>`;
+  const gaps = f.offers.map(o=>o.gap);
+  const open = gaps.length ? signed(gaps[0],2) : "—";
+  const bias = gaps.length ? signed(mean(gaps),2) : "—";
+  const b = f.beta==null ? "—" : `${f.beta.toFixed(2)} <span class="muted">(ref ${f.ref_beta==null?"—":f.ref_beta.toFixed(2)})</span>`;
+  return `<div class="k" title="agent offer − the strategy's offer, share of the BATNA→ideal range">fidelity · open / bias</div><div class="v">${open} / ${bias}</div>
+    <div class="k" title="accepts the strategy would not make / accepts it would have made">fidelity · early✗ / missed✗</div><div class="v">${f.early} / ${f.missed} <span class="muted">of ${f.decisions}</span></div>
+    <div class="k">fidelity · β fit</div><div class="v">${b}</div>`;
+}
+
 function stepSeries(e, sc){
   // Build per-issue offer series for buyer and seller across rounds.
   const rounds = [...new Set(e.steps.map(s=>s.round))].sort((a,b)=>a-b);
@@ -965,14 +1113,20 @@ function stepSeries(e, sc){
       if (iss in s.outcome) series[iss][s.party][xi] = s.outcome[iss];
     }
   }
-  return {xs, issues, series};
+  // The tested agent's reference: the offer its strategy would have made each turn.
+  const ref = {}; for (const iss of issues) ref[iss] = xs.map(()=>null);
+  for (const o of (e.fidelity ? e.fidelity.offers : [])){
+    const xi = rounds.indexOf(o.round);
+    for (const iss of issues) if (xi>=0 && iss in o.ref_outcome) ref[iss][xi] = o.ref_outcome[iss];
+  }
+  return {xs, issues, series, ref};
 }
 let OFFER_CTX = null;
 function buildOfferPlots(e, sc){
   const host=$("#offerPlots"); host.innerHTML="";
-  const {xs, issues, series} = stepSeries(e, sc);
-  OFFER_CTX = {xs, issues, series, plots:[]};
-  const buyerC=cssVar("--accent"), sellerC=cssVar("--warn");
+  const {xs, issues, series, ref} = stepSeries(e, sc);
+  OFFER_CTX = {xs, issues, series, ref, plots:[]};
+  const buyerC=cssVar("--accent"), sellerC=cssVar("--warn"), refC=cssVar("--muted");
   issues.forEach((iss, idx)=>{
     const div=document.createElement("div"); div.className="uholder"; div.style.marginTop = idx?"10px":"0";
     const cap=document.createElement("div"); cap.className="hint"; cap.textContent = iss + (sc.issues[idx].unit?` (${sc.issues[idx].unit})`:"");
@@ -980,17 +1134,18 @@ function buildOfferPlots(e, sc){
     const issueMeta = sc.issues[idx];
     const zopaVals = zopaRange(sc, iss);
     const opts = baseOpts(div.clientWidth||520, 140, {
-      scales:{y:{range:(u,min,max)=>{
+      scales:{x:{time:false}, y:{range:(u,min,max)=>{
         const vals=issueMeta.values; return [Math.min(...vals), Math.max(...vals)];
       }}},
-      series:[{}, mkSeries("buyer", buyerC), mkSeries("seller", sellerC)],
+      series:[{}, mkSeries("buyer", buyerC), mkSeries("seller", sellerC),
+        Object.assign(mkSeries("strategy ref", refC), {dash:[6,4]})],
       hooks: zopaVals ? {draw:[u=>drawBand(u, zopaVals[0], zopaVals[1])]} : {},
     });
-    const data=[xs, series[iss].buyer, series[iss].seller];
+    const data=[xs, series[iss].buyer, series[iss].seller, ref[iss]];
     const u=new uPlot(opts, data, div); uplots.push(u); OFFER_CTX.plots.push(u);
   });
   $("#offerPlots").insertAdjacentHTML("beforeend",
-    `<div class="legend"><span style="--sw:${buyerC}">buyer offer</span><span style="--sw:${sellerC}">seller offer</span><span style="--sw:var(--line-strong)">ZOPA band</span></div>`);
+    `<div class="legend"><span style="--sw:${buyerC}">buyer offer</span><span style="--sw:${sellerC}">seller offer</span>${e.fidelity?`<span class="dash" style="--sw:${refC}">${e.target_role}'s strategy (${esc(e.strategy)}) would offer</span>`:""}<span style="--sw:var(--line-strong)">ZOPA band</span></div>`);
 }
 function mkSeries(label, color){
   return {label, stroke:color, width:2, points:{show:true, size:5, stroke:color, fill:color},
@@ -1022,16 +1177,22 @@ function buildUtilPlot(e, sc){
     // record the acting party's utility of what's on the table
     bu[xi] = s.utilities.buyer; su[xi]=s.utilities.seller;
   }
-  const buyerC=cssVar("--accent"), sellerC=cssVar("--warn");
+  const buyerC=cssVar("--accent"), sellerC=cssVar("--warn"), refC=cssVar("--muted");
   const db=sc.parties.buyer.batna, ds=sc.parties.seller.batna;
+  // The agent's reference offer, on the agent's own utility scale.
+  const ag=sc.parties[e.target_role], ru=xs.map(()=>null);
+  for (const o of (e.fidelity ? e.fidelity.offers : [])){
+    const xi=rounds.indexOf(o.round); if (xi>=0) ru[xi] = ag.batna + o.ref_level*(ag.ideal-ag.batna);
+  }
   const opts=baseOpts(div.clientWidth||520, 150, {
-    scales:{y:{range:[0,1]}},
-    series:[{}, mkSeries("u·buyer",buyerC), mkSeries("u·seller",sellerC)],
+    scales:{x:{time:false}, y:{range:[0,1]}},
+    series:[{}, mkSeries("u·buyer",buyerC), mkSeries("u·seller",sellerC),
+      Object.assign(mkSeries("strategy ref",refC), {dash:[6,4]})],
     hooks:{draw:[u=>{ drawHLine(u, db, buyerC); drawHLine(u, ds, sellerC); }]},
   });
-  const u=new uPlot(opts, [xs, bu, su], div); uplots.push(u); UTIL_CTX={u, xs};
+  const u=new uPlot(opts, [xs, bu, su, ru], div); uplots.push(u); UTIL_CTX={u, xs, ru};
   div.insertAdjacentHTML("afterend",
-    `<div class="legend"><span style="--sw:${buyerC}">u·buyer</span><span style="--sw:${sellerC}">u·seller</span><span style="--sw:var(--muted)">dashed = BATNA</span></div>`);
+    `<div class="legend"><span style="--sw:${buyerC}">u·buyer</span><span style="--sw:${sellerC}">u·seller</span>${e.fidelity?`<span class="dash" style="--sw:${refC}">u·${e.target_role} of the strategy's offer</span>`:""}<span style="--sw:var(--muted)">thin dashed = BATNA</span></div>`);
 }
 function drawHLine(u, y, color){
   const ctx=u.ctx, x0=u.bbox.left, x1=u.bbox.left+u.bbox.width, yy=u.valToPos(y,"y",true);
@@ -1166,7 +1327,8 @@ function setCursor(e, idx){
     OFFER_CTX.issues.forEach((iss,pi)=>{
       const b=OFFER_CTX.series[iss].buyer.map((v,j)=>upto[j]?v:null);
       const s=OFFER_CTX.series[iss].seller.map((v,j)=>upto[j]?v:null);
-      OFFER_CTX.plots[pi].setData([OFFER_CTX.xs, b, s]);
+      const r=OFFER_CTX.ref[iss].map((v,j)=>upto[j]?v:null);
+      OFFER_CTX.plots[pi].setData([OFFER_CTX.xs, b, s, r]);
     });
   }
   if (UTIL_CTX){
@@ -1175,7 +1337,8 @@ function setCursor(e, idx){
     const bu=UTIL_CTX.xs.map(()=>null), su=UTIL_CTX.xs.map(()=>null);
     for (const s of e.steps){ if (s.round>cutRound || !s.utilities) continue;
       const xi=UTIL_CTX.xs.indexOf(s.round); bu[xi]=s.utilities.buyer; su[xi]=s.utilities.seller; }
-    UTIL_CTX.u.setData([UTIL_CTX.xs, bu, su]);
+    const ru=UTIL_CTX.ru.map((v,j)=>UTIL_CTX.xs[j]<=cutRound?v:null);
+    UTIL_CTX.u.setData([UTIL_CTX.xs, bu, su, ru]);
   }
 }
 
@@ -1197,6 +1360,7 @@ function wireSort(tableId, state, rerender){
 }
 wireSort("leaderboard", boardSort, ()=>renderLeaderboard(filteredEpisodes()));
 wireSort("tracks", trackSort, ()=>renderTracks(filteredEpisodes()));
+wireSort("fidTable", fidSort, ()=>renderFidelity(filteredEpisodes()));
 wireSort("episodes", episodeSort, ()=>renderEpisodes(filteredEpisodes()));
 $("#episodeSearch").oninput = ev => { searchTerm=ev.target.value; renderEpisodes(filteredEpisodes()); };
 
