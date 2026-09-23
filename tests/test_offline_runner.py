@@ -61,9 +61,9 @@ def test_no_zopa_walk_away(no_zopa_scenario) -> None:
     assert trace.agreement is None
     assert trace.outcome_kind == "walk_away"
     assert trace.validity["correct_walk_away"] is True
-    # BATNA fallback => q = 0 (value captured above BATNA is zero).
+    # No ZOPA: a correct walk-away is a safety result (walk✓), not a q = 0 in S_s.
     ep = score_trace(trace, no_zopa_scenario)
-    assert ep.q == 0.0
+    assert ep.no_zopa and ep.q is None and not ep.scorable
 
 
 def test_determinism_same_inputs_same_trace(single_issue_scenario) -> None:

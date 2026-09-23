@@ -164,6 +164,8 @@ def _episode_payload(trace: Trace, scenario: Scenario) -> dict[str, Any]:
         "mode": trace.mode,
         "q": scored.q,
         "degenerate": scored.degenerate,
+        # No ZOPA: q is None and the episode is excluded from S_s (walk✓ instead).
+        "no_zopa": scored.no_zopa,
         "q_buyer": scored_buyer.q,
         "q_buyer_degenerate": scored_buyer.degenerate,
         "errored": trace.errored,
@@ -207,6 +209,7 @@ def build_payload(
     used_ids = {t.scenario_id for t in traces}
     episodes = [_episode_payload(t, scenarios[t.scenario_id]) for t in traces]
     n_degenerate = sum(1 for e in episodes if e["degenerate"])
+    n_no_zopa = sum(1 for e in episodes if e["no_zopa"])
     has_messages = any(s["rationale"] or s["message"] for e in episodes for s in e["steps"])
     has_adjustments = any(s["adjusted"] for e in episodes for s in e["steps"])
     has_errors = any(e["errored"] for e in episodes)
@@ -228,6 +231,7 @@ def build_payload(
             "seed": seed,
             "n_episodes": len(episodes),
             "n_degenerate": n_degenerate,
+            "n_no_zopa": n_no_zopa,
             "has_messages": has_messages,
             "has_adjustments": has_adjustments,
             "has_errors": has_errors,

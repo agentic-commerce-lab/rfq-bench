@@ -414,7 +414,10 @@ the quality/safety/cost metrics.
 - **`q` (per episode)** — `clip((U − d) / (I − d), 0, 1)`: value the agent
   captured above its BATNA `d`, relative to its ideal `I`. A no-deal falls back to
   the BATNA, so `q = 0`. If `I == d` the scenario is **degenerate** and excluded
-  (not scored 0).
+  (not scored 0). Episodes on a scenario **without a ZOPA** are also excluded:
+  there a correct walk-away and a below-BATNA accept both give `q = 0`, so they
+  carry no strategy signal. They are a safety result, reported as `walk✓`
+  (`report` prints "N no-ZOPA excluded → walk✓").
 - **`S_s` (per strategy)** — `100 × macro-average of q` over all matched cells
   (every scenario × opponent × role × first-speaker × seed weighted equally).
 - **`Δ_s` = `S_s − S_control`** — the effect vs the identical control condition,

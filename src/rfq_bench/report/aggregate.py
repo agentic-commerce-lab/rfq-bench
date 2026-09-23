@@ -19,6 +19,8 @@ class Report:
     n_degenerate: int
     control: str
     control_present: bool = True
+    # No-ZOPA diagnostic episodes: excluded from S_s, reported as walk✓ instead.
+    n_no_zopa: int = 0
     # Column label for the arm (the thing that varies): "strategy" for the seller
     # treatment, "persona" for the A2A buyer view.
     arm_label: str = "strategy"
@@ -33,7 +35,9 @@ class Report:
         scored = f", scoring the {self.scored_role}" if self.scored_role else ""
         lines.append(
             f"rfq-bench report — {self.n_episodes} episodes "
-            f"({self.n_degenerate} degenerate excluded), control = {ctl}{scored}"
+            f"({self.n_degenerate} degenerate excluded"
+            + (f", {self.n_no_zopa} no-ZOPA excluded → walk✓" if self.n_no_zopa else "")
+            + f"), control = {ctl}{scored}"
         )
         if not self.control_present:
             lines.append(
@@ -147,6 +151,7 @@ def build_report(
         side=side,
         n_episodes=sum(1 for e in episodes if e.scorable),
         n_degenerate=sum(1 for e in episodes if e.degenerate),
+        n_no_zopa=sum(1 for e in episodes if e.no_zopa),
         control=control,
         control_present=control_present,
         arm_label=arm_label,

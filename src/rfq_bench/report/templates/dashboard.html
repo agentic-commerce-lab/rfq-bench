@@ -541,6 +541,7 @@ function filteredEpisodes(){ return EPS.filter(passFilters); }
 /* ---------- meta line + filters UI ---------- */
 $("#metaline").textContent =
   `${META.n_episodes} episodes · ${META.n_degenerate} degenerate excluded · ` +
+  (META.n_no_zopa ? `${META.n_no_zopa} no-ZOPA excluded (see walk✓) · ` : "") +
   `control = "${META.control}" · model ${META.models.join(", ")} · ${META.generated_at}` +
   (META.source ? ` · ${META.source}` : "");
 
@@ -968,7 +969,7 @@ function renderEpisodes(eps){
       <td><span class="badge role">${e.target_role}</span></td>
       <td class="muted">${e.first_speaker}</td><td class="num muted">${e.seed}</td>
       <td><span class="badge ${e.outcome_kind}">${e.outcome_kind}</span></td>
-      <td class="num">${degenOf(e)?'<span class="muted">n/a</span>':fmt(100*qOf(e),0)}</td>
+      <td class="num">${e.no_zopa?'<span class="muted" title="no ZOPA: excluded from S_s, scored as walk✓">walk</span>':(degenOf(e)||qOf(e)==null)?'<span class="muted">n/a</span>':fmt(100*qOf(e),0)}</td>
       <td class="num">${fmt(e.utilities.buyer,2)}</td>
       <td class="num">${fmt(e.utilities.seller,2)}</td>
       <td class="num muted">${e.rounds_to_close}</td>
@@ -1064,7 +1065,10 @@ function renderReplay(e){
   // q formula
   const I=prof.ideal, d=prof.batna;
   const q = e.degenerate? null : Math.max(0, Math.min(1,(U-d)/(I-d)));
-  $("#qform").innerHTML = e.degenerate
+  $("#qform").innerHTML = e.no_zopa
+    ? `no ZOPA: no outcome beats both BATNAs, so the correct result is a walk-away (q would be 0 for any strategy) → excluded from S_s, reported as walk✓ `
+      + `(${e.validity && e.validity.correct_walk_away ? "correct walk-away ✓" : "no correct walk-away ✕"})`
+    : e.degenerate
     ? `degenerate scenario (I = d = ${fmt(d,3)}) → q undefined, excluded`
     : `q = clip((U − d)/(I − d), 0, 1)<br>= clip((${fmt(U,3)} − ${fmt(d,3)})/(${fmt(I,3)} − ${fmt(d,3)}), 0, 1)`
       + ` = <b>${fmt(q,3)}</b> &nbsp;→&nbsp; S contribution ${fmt(100*q,1)}`;

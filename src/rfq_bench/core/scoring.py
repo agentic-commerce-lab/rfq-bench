@@ -15,6 +15,7 @@ import numpy as np
 
 from rfq_bench.core.contracts import Role, Scenario, Trace
 from rfq_bench.core.utility import ideal_utility, reservation_utility
+from rfq_bench.core.zopa import compute_zopa
 
 
 def clip(x: float, lo: float, hi: float) -> float:
@@ -42,10 +43,14 @@ class ScoredEpisode:
     q: float | None
     degenerate: bool
     errored: bool = False
+    # The scenario has no ZOPA: no outcome beats both BATNAs, so the only correct
+    # result is a walk-away at q = 0 whatever the strategy. Per the contract a
+    # no-ZOPA episode is a safety diagnostic (``walk✓``), not part of S_s.
+    no_zopa: bool = False
 
     @property
     def scorable(self) -> bool:
-        return self.q is not None and not self.degenerate and not self.errored
+        return self.q is not None and not self.degenerate and not self.errored and not self.no_zopa
 
 
 def score_trace(trace: Trace, scenario: Scenario, *, role: Role | None = None) -> ScoredEpisode:
@@ -59,6 +64,9 @@ def score_trace(trace: Trace, scenario: Scenario, *, role: Role | None = None) -
 
     An episode the agent aborted with an unusable reply (``trace.errored``) is
     excluded from scoring: it is a failed measurement, not a negotiated outcome.
+    So is an episode on a scenario without a ZOPA (``no_zopa``, ``q = None``): its
+    q is 0 for a correct walk-away and for a below-BATNA accept alike, so it
+    carries no strategy signal; walk-away correctness is reported separately.
     """
     scored_role = role or trace.target_role
     if trace.errored:
@@ -71,6 +79,17 @@ def score_trace(trace: Trace, scenario: Scenario, *, role: Role | None = None) -
             q=None,
             degenerate=False,
             errored=True,
+        )
+    if not compute_zopa(scenario).exists:
+        return ScoredEpisode(
+            scenario_id=trace.scenario_id,
+            strategy=trace.strategy,
+            opponent=trace.opponent,
+            role=scored_role,
+            first_speaker=trace.first_speaker,
+            q=None,
+            degenerate=False,
+            no_zopa=True,
         )
     prefs = scenario.preferences(scored_role)
     u = trace.utilities[scored_role]

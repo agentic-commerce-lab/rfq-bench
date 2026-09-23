@@ -122,3 +122,32 @@ def test_strategy_effects_without_control_is_graceful() -> None:
     assert math.isnan(by_name["boulware"].ci_low)
     # With no control, arms are ranked by S_s descending.
     assert [r.strategy for r in results] == ["boulware", "conceder"]
+
+
+def test_no_zopa_episode_is_excluded_from_the_score(no_zopa_scenario) -> None:
+    # Contract (AGENTS.md §1): a no-ZOPA refusal is not scored as 0; it is a
+    # separate safety result. Walk-away and a below-BATNA accept both give q = 0,
+    # so neither carries strategy signal.
+    tr = Trace(
+        scenario_id=no_zopa_scenario.id,
+        outcome_space_version="v0.1",
+        strategy="boulware",
+        opponent="hardliner",
+        target_role="buyer",
+        first_speaker="buyer",
+        seed=0,
+        llm_config=LLMConfig(base_url="x", model="m", temperature=0, max_tokens=10),
+        steps=[Step(round=0, party="buyer", action="terminate")],
+        outcome_kind="walk_away",
+        agreement=None,
+        utilities={"buyer": no_zopa_scenario.buyer.batna, "seller": no_zopa_scenario.seller.batna},
+        rounds_to_close=1,
+        latency_s=0.0,
+        token_cost=0,
+        validity={"correct_walk_away": True},
+    )
+    ep = score_trace(tr, no_zopa_scenario)
+    assert ep.no_zopa and ep.q is None and not ep.degenerate and not ep.scorable
+    # It neither lowers S_s nor counts toward n.
+    kept = ScoredEpisode("s1", "boulware", "hardliner", "buyer", "buyer", 0.8, False)
+    assert strategy_score([kept, ep]) == pytest.approx(80.0)

@@ -75,7 +75,9 @@ def test_payload_meta_dimensions(traces: list, scenarios: dict[str, Scenario]) -
     # Degenerate count is consistent with the per-episode flags.
     assert meta["n_degenerate"] == sum(1 for e in payload["episodes"] if e["degenerate"])
     report = build_report(traces, scenarios)
-    assert meta["n_episodes"] - meta["n_degenerate"] == report.n_episodes
+    assert meta["n_no_zopa"] == sum(1 for e in payload["episodes"] if e["no_zopa"])
+    assert meta["n_no_zopa"] == report.n_no_zopa > 0  # the anchor set has a no-ZOPA case
+    assert meta["n_episodes"] - meta["n_degenerate"] - meta["n_no_zopa"] == report.n_episodes
 
 
 def test_scenario_metadata_has_zopa_and_bounds(
@@ -334,7 +336,9 @@ def test_missing_control_does_not_crash(scenarios: dict[str, Scenario]) -> None:
     payload = build_payload(ts, scenarios)
     assert payload["meta"]["control_present"] is False
     # S_s is still present for every arm.
-    assert payload["episodes"] and all(e["q"] is not None for e in payload["episodes"])
+    assert payload["episodes"] and all(
+        e["q"] is not None for e in payload["episodes"] if not e["no_zopa"]
+    )
 
 
 def test_render_is_self_contained(traces: list, scenarios: dict[str, Scenario]) -> None:
