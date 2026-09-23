@@ -167,3 +167,46 @@ def test_max_rounds_from_config_and_cli_override(tmp_path: Path) -> None:
     assert "max-rounds    : 2" in _run([*base, "--max-rounds", "2"])
     max_round_2 = max(json.loads(line)["steps"][-1]["round"] for line in out.open())
     assert max_round_2 <= 1
+
+
+def _scripted_config(tmp_path: Path, *, n_boot: int = 50) -> tuple[Path, Path, Path]:
+    """A small run config plus the traces it produces (scripted, no network)."""
+    out = tmp_path / "traces.jsonl"
+    html = tmp_path / "dash.html"
+    cfg = _write(
+        tmp_path / "c.toml",
+        f'[run]\ndata = "{Path("data/scenarios").resolve()}"\nscenarios = ["single_price_a"]\n'
+        'strategies = ["control", "boulware"]\nopponents = ["hardliner"]\nroles = ["buyer"]\n'
+        f'first_speakers = ["buyer"]\nseeds = [0]\nout = "{out}"\noverwrite = true\n'
+        f'dashboard = false\ndashboard_out = "{html}"\n'
+        f'[dashboard]\ncontrol = "control"\nn_boot = {n_boot}\nseed = 3\n',
+    )
+    _run(["run", "--config", str(cfg), "--yes"])
+    return cfg, out, html
+
+
+def test_dashboard_reads_paths_and_settings_from_config(tmp_path: Path) -> None:
+    cfg, _, html = _scripted_config(tmp_path, n_boot=77)
+    output = _run(["dashboard", "--config", str(cfg)])
+    assert f"to {html}" in output and html.exists()
+    payload = html.read_text(encoding="utf-8")
+    assert '"n_boot": 77' in payload or '"n_boot":77' in payload  # from [dashboard]
+
+
+def test_dashboard_flag_overrides_config(tmp_path: Path) -> None:
+    cfg, _, html = _scripted_config(tmp_path)
+    other = tmp_path / "other.html"
+    _run(["dashboard", "--config", str(cfg), "--out", str(other)])
+    assert other.exists() and not html.exists()
+
+
+def test_report_reads_traces_and_data_from_config(tmp_path: Path) -> None:
+    cfg, _, _ = _scripted_config(tmp_path)
+    output = _run(["report", "--config", str(cfg)])
+    assert "2 episodes" in output and "boulware" in output
+
+
+def test_report_config_error_is_reported(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["report", "--config", str(tmp_path / "missing.toml")])
+    assert result.exit_code == 1
+    assert "config error" in result.output

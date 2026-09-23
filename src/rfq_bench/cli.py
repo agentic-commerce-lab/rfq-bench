@@ -697,8 +697,59 @@ def run(
         )
 
 
+_SCORING_CONFIG_HELP = (
+    "Read paths and scoring settings from a run config (the same TOML as `run --config`): "
+    "traces from [run].out (or the agent's default output), data from [run].data, the "
+    "dashboard file from [run].dashboard_out, control/buyer_control/n_boot/seed from "
+    "[dashboard]. Explicit flags still win. Not auto-discovered."
+)
+
+
+def _scoring_options_from_config(
+    ctx: typer.Context, config: str | None, **current: Any
+) -> dict[str, Any]:
+    """For ``report`` / ``dashboard``: fill untyped options from a run config.
+
+    Mirrors ``run``'s precedence (typed flag > config > built-in default), so the
+    same config that produced a trace file can re-score or re-render it. Only keys
+    present in ``current`` are touched (``report`` has no ``out``).
+    """
+    if config is None:
+        return current
+    try:
+        cfg = load_config(config)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(f"config error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(f"using config: {config}", err=True)
+
+    def typed(name: str) -> bool:
+        source = ctx.get_parameter_source(name)
+        return source is not None and source.name == "COMMANDLINE"
+
+    rc, dc = cfg.run, cfg.dashboard
+    # Where `run` would have written the traces for this config.
+    agent_default = {"a2a": _DEFAULT_A2A_OUT, "laya": _DEFAULT_LAYA_OUT}.get(rc.agent or "")
+    from_config: dict[str, Any] = {
+        "traces": rc.out or agent_default,
+        "data": rc.data,
+        "out": rc.dashboard_out,
+        "control": dc.control,
+        "buyer_control": dc.buyer_control,
+        "n_boot": dc.n_boot,
+        "seed": dc.seed,
+    }
+    merged = dict(current)
+    for key, value in from_config.items():
+        if key in merged and value is not None and not typed(key):
+            merged[key] = value
+    return merged
+
+
 @app.command()
 def report(
+    ctx: typer.Context,
+    config: str | None = typer.Option(None, "--config", "-c", help=_SCORING_CONFIG_HELP),
     traces: str = typer.Option(_DEFAULT_OUT, help="JSONL trace file to score."),
     data: str = typer.Option(_DEFAULT_DATA, help="Scenario dataset directory."),
     control: str = typer.Option("control", help="Control condition (seller strategy) name."),
@@ -719,6 +770,18 @@ def report(
     A2A self-play traces score the seller strategy as the treatment and the buyer
     persona as the opponent, so they flow through this same report unchanged.
     """
+    opts = _scoring_options_from_config(
+        ctx,
+        config,
+        traces=traces,
+        data=data,
+        control=control,
+        buyer_control=buyer_control,
+        n_boot=n_boot,
+        seed=seed,
+    )
+    traces, data, control = opts["traces"], opts["data"], opts["control"]
+    buyer_control, n_boot, seed = opts["buyer_control"], opts["n_boot"], opts["seed"]
     scenarios = _scenario_index(load_scenarios(data))
     all_traces = list(read_traces(traces))
     if not all_traces:
@@ -762,6 +825,8 @@ def report(
 
 @app.command()
 def dashboard(
+    ctx: typer.Context,
+    config: str | None = typer.Option(None, "--config", "-c", help=_SCORING_CONFIG_HELP),
     traces: str = typer.Option(_DEFAULT_OUT, help="JSONL trace file to visualize."),
     data: str = typer.Option(_DEFAULT_DATA, help="Scenario dataset directory."),
     out: str = typer.Option(
@@ -775,7 +840,9 @@ def dashboard(
     seed: int = typer.Option(0, help="Bootstrap RNG seed (for reproducible CIs)."),
 ) -> None:
     """Build a self-contained interactive HTML dashboard from a trace file."""
-    n = _write_dashboard_file(
+    opts = _scoring_options_from_config(
+        ctx,
+        config,
         traces=traces,
         data=data,
         out=out,
@@ -784,7 +851,8 @@ def dashboard(
         n_boot=n_boot,
         seed=seed,
     )
-    typer.echo(f"wrote dashboard for {n} episodes to {out}")
+    n = _write_dashboard_file(**opts)
+    typer.echo(f"wrote dashboard for {n} episodes to {opts['out']}")
 
 
 @app.command("list")
