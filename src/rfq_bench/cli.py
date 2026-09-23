@@ -145,6 +145,56 @@ def _hms(seconds: float) -> str:
     return f"{s}s"
 
 
+def _print_cost_estimate(specs: list[EpisodeSpec], *, agent: str, max_rounds: int | None) -> None:
+    """Print the model-spend ceiling for LLM runs (see agent.cost_estimate).
+
+    Uses the model set in .env / the environment. Never blocks the run: any
+    failure prints "unavailable" and the run proceeds to the confirmation.
+    """
+    if agent not in ("llm", "a2a"):
+        return
+    from rfq_bench.agent.cost_estimate import estimate_run_cost
+    from rfq_bench.agent.settings import AgentSettings
+
+    try:
+        est = estimate_run_cost(specs, agent=agent, max_rounds=max_rounds, settings=AgentSettings())
+    except Exception as exc:  # an estimate must never block a run
+        typer.echo(f"  cost estimate : unavailable ({type(exc).__name__}: {exc})")
+        return
+    if est is None:
+        return
+    pad = " " * 18
+    if est.max_usd is None:
+        typer.echo(f"  cost estimate : unavailable for {est.model} ({est.basis})")
+    else:
+        typer.secho(
+            f"  cost estimate : up to ${est.max_usd:,.2f}  ({est.model}; {est.calls_max:,} "
+            "calls if every episode runs to its deadline)",
+            bold=True,
+        )
+        typer.echo(f"{pad}basis: {est.basis}")
+        if est.worst_usd is not None:
+            typer.echo(
+                f"{pad}if it is a reasoning model using all max_tokens on every call: "
+                f"up to ${est.worst_usd:,.2f}"
+            )
+        typer.echo(
+            f"{pad}agreements end episodes early, so actual spend is usually lower; "
+            "re-asks and transient retries come on top"
+        )
+    if est.credit_remaining is not None:
+        typer.echo(
+            f"  credit        : ${est.credit_remaining:,.2f} remaining on this OpenRouter key"
+        )
+        if est.max_usd is not None and est.max_usd > est.credit_remaining:
+            typer.secho(
+                "  WARNING: the cost ceiling exceeds the remaining credit; "
+                "the run may stop partway.",
+                fg="yellow",
+                bold=True,
+            )
+
+
 def _print_run_plan(
     specs: list[EpisodeSpec],
     *,
@@ -423,6 +473,7 @@ def run(
     if not specs:
         typer.echo("Nothing to run with the current settings.", err=True)
         raise typer.Exit(1)
+    _print_cost_estimate(specs, agent=agent, max_rounds=max_rounds)
     if not yes:
         typer.confirm(f"Run {len(specs)} episodes?", abort=True)
 
