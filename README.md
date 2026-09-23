@@ -122,7 +122,17 @@ code, per side (buyer / seller) if you like. Resolution order, highest first:
 
 The quickest customization: copy `prompts/system.example.md` to `prompts/system.md`
 (or `prompts/system_buyer.md` / `prompts/system_seller.md`) and edit — no env needed.
+By default both roles share the packaged prompt. In A2A a role-specific prompt is an
+asymmetry between the sides, so keep any per-role files mirrored.
 See [`prompts/README.md`](./prompts/README.md).
+
+**The per-turn payload** is compact JSON in cache-friendly order. Content that's fixed
+for the episode comes first (role, each issue's options in preference order, the
+walk-away), then the arm's `approach_instruction`, then an append-only `history` of
+`[who, offer, message?]` entries, and last the fields that change every turn
+(`rounds_left`, the standing offer). Providers that cache prompt prefixes reuse
+everything up to the newest move. `rfq-bench report` prints the measured cache hit
+rate, and an A2A messages summary, whenever the traces carry them.
 
 **Strategies and personas are markdown too.** Drop `prompts/strategies/<name>.md` or
 `prompts/personas/<name>.md` (the filename stem is the name) to add a new strategy /
@@ -206,6 +216,30 @@ and dashboard work unchanged:
   urgency, price-sensitivity, risk tolerance, aggressiveness, and cooperativeness
   only; the buyer's private utilities, BATNA, and ideal come from the scenario and
   stay identical across personas, so scoring and the leakage guarantee are unchanged.
+- **The two sides can talk.** Besides its offer, each side may send a short public
+  `message` (optional, delivered up to 300 characters; the full text is kept in the
+  trace and flagged if cut). The other side sees it in its `history` next to the
+  offer. Each move's `rationale` stays private: it goes into the trace for you and is
+  never shown to the other agent. Messages are cheap talk: only the offer fields bind,
+  and a model may reveal, withhold, or bluff. The leakage guarantee is therefore that
+  the harness never inserts private economics into a prompt; what a model chooses to
+  say is part of the negotiation. `--agent llm` has no channel, since its scripted
+  opponent can't read or reply.
+- **Invalid moves are corrected, withheld, and counted.** When a policy constraint
+  fires on a move (an off-grid value snapped to the nearest option, or a quote or
+  accept below the walk-away raised to it), the corrected offer is what's played, and
+  that move's message is withheld from the opponent, since it quotes the invalid
+  terms. The agent that made the move is told, in its own history entry, what it
+  sent and what was played instead (e.g. `policy: you offered price=240, below your
+  minimum of 245; played price=245`), so it can correct itself. For one issue the
+  walk-away itself is directional in the payload (`{"price": {"at_most": 160}}` for a
+  buyer, `{"at_least": 245}` for a seller), so which side of the number is acceptable
+  is stated, not implied. The opponent only
+  sees the corrected offer, since the note would reveal the author's walk-away. The
+  trace keeps the model's original move and message. `rfq-bench report`
+  counts firings by role, kind and arm. The dashboard shows a per-episode `policy`
+  column, a `policy/ep` column per arm, and in the replay the constraint and the
+  withheld message.
 
 ```bash
 uv run rfq-bench list                              # includes the persona names
@@ -215,10 +249,30 @@ uv run rfq-bench run --agent a2a \
     --overwrite -y                                 # writes results/a2a_v0.jsonl
 uv run rfq-bench report --traces results/a2a_v0.jsonl
 uv run rfq-bench dashboard --traces results/a2a_v0.jsonl
+
+# A run made from a config file can be re-scored / re-rendered from the same file,
+# which supplies the traces, data dir, dashboard path and [dashboard] settings:
+uv run rfq-bench report    --config configs/a2a-price.toml
+uv run rfq-bench dashboard --config configs/a2a-price.toml
 ```
 
-Built-in personas: `neutral`, `bargain_hunter`, `time_pressured`,
-`relationship_builder`, `hardball`, `risk_averse`.
+**Primary personas** (procurement-grounded, the defaults in `configs/a2a-grid.toml`):
+`cost_focused`, `total_value`, `reliability_first`, `relationship_focused`, with
+`neutral` as the Δ baseline. These are the ones to run for a real measurement — each
+maps to a recognized negotiation motive; see [Persona design and scientific basis](#persona-design-and-scientific-basis)
+below.
+
+The price-only suite (`configs/a2a-price.toml`) uses a different set, fitted to a
+single issue: `neutral`, `cost_focused`, `relationship_focused`, `supply_security`,
+`time_pressured`. See [Price-only persona set](#price-only-persona-set-configsa2a-pricetoml).
+
+There are also six **generic built-in personas** — `neutral`, `bargain_hunter`,
+`time_pressured`, `relationship_builder`, `hardball`, `risk_averse` — hard-coded in
+`agent/personas.py` as short disposition strings (`time_pressured` is overridden by
+its file in `prompts/personas/`). They are convenience dispositions
+for quick smoke checks (e.g. `configs/a2a-smoke.toml`), not the grounded experiment;
+the primary set above (defined in `prompts/personas/*.md`) is merged on top, so all
+names are available at once.
 
 The matrix is `scenarios × strategies × personas × first-speakers × seeds` (roles
 are pinned — the seller plays the strategy, the buyer the persona — so there is no
@@ -246,6 +300,48 @@ Two notes carry over from the LLM path:
 The same faithful adjustments apply symmetrically to both sides (snap-to-grid,
 shop reservation floor); no scripted-strategy value is ever substituted for either
 model, and an unusable reply from **either** side excludes the episode.
+
+### Persona design and scientific basis
+
+Beyond the disposition-only built-ins listed above, the benchmark ships four
+**procurement-grounded buyer personas** (the defaults in `configs/a2a-grid.toml`,
+defined in `prompts/personas/*.md`). Each maps a recognized negotiation motive or
+procurement archetype onto the `neutral`-baselined opponent axis. Like every
+persona they steer *behavior only* — tone, aspiration, information sharing, risk
+tolerance — while the buyer's private utilities, BATNA, and ideal stay fixed by the
+scenario, so `q` remains comparable persona-to-persona and the leakage guarantee
+holds.
+
+| Persona (`file`) | Archetype | Scientific basis | Sources |
+| --- | --- | --- | --- |
+| `cost_focused` | Leverage / Cost-Focused Buyer | A competitive, distributive negotiation motive: high aspiration, strong BATNA, limited information sharing, and emphasis on price extraction. Kelly & Chicksand's systematic review distinguishes adversarial/distributive bargaining from integrative negotiation; Sebenius grounds the reliance on a strong BATNA, reservation thresholds, and willingness to walk away. | Kelly & Chicksand (2024); Sebenius (2017) |
+| `total_value` | Integrative / Total-Value Buyer | A collaborative, problem-solving orientation: considers multiple issues, shares relevant preferences, and searches for trade-offs that improve joint outcomes. Kelly & Chicksand's review contrasts integrative with distributive bargaining; Elgoibar et al. link trust and trustworthiness to information sharing, trade-offs, and joint-value creation. | Kelly & Chicksand (2024); Elgoibar et al. (2021) |
+| `reliability_first` | Risk- and Compliance-First Buyer | High sensitivity to losses, uncertainty, and failure. The buyer may accept a higher price for delivery certainty, quality guarantees, or regulatory compliance. Prospect Theory provides the behavioral basis for loss sensitivity and certainty preferences; Choudhary et al. cover supply-risk assessment and multi-criteria risk evaluation in procurement contexts. | Kahneman & Tversky (1979); Choudhary et al. (2023) |
+| `relationship_focused` | Relationship-Focused / Continuity Buyer | Values reliability, information sharing, cooperation, and future supplier continuity in addition to the current transaction price. Kumar et al. address long-term buyer–supplier relationships, information access, flexibility, sustainability, fairness, and supplier experience; Elgoibar et al. support trust, reciprocity, and cooperative negotiation. | Kumar et al. (2025); Elgoibar et al. (2021) |
+
+#### Price-only persona set (`configs/a2a-price.toml`)
+
+With price as the only issue, a persona defined by a trade-off against other issues
+has nothing to trade. `total_value` (price vs the whole package) and
+`reliability_first` (price vs delivery and warranty) behaved like `neutral` in a
+price-only run, and their Δ confidence intervals included zero. They stay in the
+multi-issue grid and are replaced in the price suite:
+
+| Persona (`file`) | Archetype | Basis on a single issue | Sources |
+| --- | --- | --- | --- |
+| `neutral`, `cost_focused`, `relationship_focused` | as above | Their core is about price or cooperation, not other issues, so it carries over. | as above |
+| `supply_security` | Risk-First Buyer, single-issue form | On one issue the risk isn't poor delivery but *not closing the deal* (supply risk). Loss aversion then shows as paying a premium for a certain agreement, within the walk-away. Same basis as `reliability_first`, applied to the risk that exists here. | Kahneman & Tversky (1979); Choudhary et al. (2023) |
+| `time_pressured` | Time-Pressured Buyer | Delay is costly: it prefers a quick acceptable deal over the best price, and grows more willing to pay near the deadline. Experimental research shows that time pressure interacts with negotiation orientation and can either increase competitiveness or encourage faster cooperation. Defined in `prompts/personas/time_pressured.md`, overriding the generic built-in of the same name. | Carnevale & Lawler (1986) |
+
+**References** (freely available unless marked)
+
+- Carnevale, P. J. D., & Lawler, E. J. (1986). *Time pressure and the development of integrative agreements in bilateral negotiations.* Journal of Conflict Resolution, 30(4), 636–659. (Free availability not verified.)
+- Choudhary, N. A., et al. (2023). *Risk assessment in supply chains.* (Open access via PMC.)
+- Elgoibar, P., Munduate, L., & Euwema, M. (2021). *Increasing integrative negotiation through trustworthiness and trust.*
+- Kahneman, D., & Tversky, A. (1979). *Prospect theory: An analysis of decision under risk.* Econometrica, 47(2), 263–291. (MIT-hosted PDF.)
+- Kelly, S., & Chicksand, D. (2024). *A critical exploration of bargaining in purchasing and supply management.* (Open-access systematic review.)
+- Kumar, N., et al. (2025). *Managing buyer experience in a buyer–supplier relationship.* (Open-access PDF.)
+- Sebenius, J. K. (2017). *BATNAs in negotiation: Common errors and three kinds of "no".* (Harvard DASH PDF.)
 
 ## Laya decision agent (`--agent laya`)
 
