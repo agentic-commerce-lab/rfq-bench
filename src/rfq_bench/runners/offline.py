@@ -207,6 +207,7 @@ def run_episode(
         cost_usd_by_role=cost_usd_by_role,
         prompt_tokens_by_role=prompt_tokens_by_role,
         cached_tokens_by_role=cached_tokens_by_role,
+        deadline=deadline,
     )
 
 
@@ -225,6 +226,7 @@ def _finalize(
     cost_usd_by_role: dict[Role, float] | None = None,
     prompt_tokens_by_role: dict[Role, int] | None = None,
     cached_tokens_by_role: dict[Role, int] | None = None,
+    deadline: int | None = None,
 ) -> Trace:
     scenario = spec.scenario
     zopa = compute_zopa(scenario)
@@ -267,6 +269,7 @@ def _finalize(
         agreement=agreement,
         utilities=utilities,
         rounds_to_close=len(steps),
+        deadline=deadline if deadline is not None else scenario.deadline_rounds,
         latency_s=latency_s,
         token_cost=token_cost,
         cost_usd=cost_usd,

@@ -816,6 +816,11 @@ def report(
         )
         typer.echo("")
         typer.echo(buyer_rep.render())
+    # Manipulation check: did the tested agent actually play its strategy?
+    from rfq_bench.report.fidelity import build_fidelity_report
+
+    typer.echo("")
+    typer.echo(build_fidelity_report(all_traces, scenarios).render())
     # Prompt-cache hit rate and A2A message activity (only when the traces have them).
     from rfq_bench.report.usage import usage_summary
 

@@ -202,6 +202,10 @@ class Trace(BaseModel):
     # Realized utilities per party, on the normalized [0, 1] scale.
     utilities: dict[Role, float]
     rounds_to_close: int
+    # The effective deadline the episode ran under (the scenario's own deadline,
+    # or lower when capped by ``max_rounds``). None on traces written before this
+    # field existed; readers then fall back to the scenario's deadline.
+    deadline: int | None = None
     latency_s: float
     token_cost: int
     # Real spend in USD, when the provider reports it (e.g. OpenRouter's

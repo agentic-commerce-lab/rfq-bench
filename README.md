@@ -439,6 +439,28 @@ the quality/safety/cost metrics.
   `$/ep` in `report` and per-episode in the dashboard; providers that don't
   report cost show "not reported" rather than a guess.
 
+**Strategy fidelity (manipulation check).** An LLM or Laya agent only *reads* its
+strategy as guidance text, so it may not play it. `report` replays each arm's
+registry definition (opening, concession shape `β`, acceptance rule) over the
+agent's actual episode history and compares turn by turn
+(`report/fidelity.py`):
+
+- **`open` / `bias` / `|gap|`** — agent offer − the offer the strategy would make,
+  as a share of the agent's BATNA→ideal range (first offer / signed mean / mean
+  absolute). `+` = tougher than the strategy, `−` = conceded more.
+- **`on-tgt`** — share of offers within ±0.10 of the strategy's offer.
+- **`early✗` / `missed✗`** — accepts the strategy would not make / accepts it
+  would have made (countered or walked instead), per accept decision.
+- **`β fit` / `β ref`** — median concession shape fitted to the agent's offers vs
+  the same fit on the strategy's offers (`<1` holds then concedes late, `>1`
+  concedes early). Needs ≥ 3 offers per episode.
+
+Scripted agents replay with zero gap by construction (the test anchor). If arms
+show a Δ but near-identical fidelity profiles, the model is not differentiating
+the strategies. Traces record their effective `deadline` (older traces fall back
+to the scenario's). Replays use the *current* strategy code, so traces written
+before a strategy's definition changed will show gaps against the new definition.
+
 Per-episode **validity flags** are also stored on each trace:
 `agreement_reached`, `legal_agreement`, `no_batna_violation`, and
 `correct_walk_away`.
