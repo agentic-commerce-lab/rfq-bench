@@ -28,6 +28,7 @@ from rfq_bench.core.utility import (
     worst_utility,
 )
 from rfq_bench.core.zopa import compute_zopa
+from rfq_bench.report.metrics import best_price, revenue
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 _DATA_PLACEHOLDER = "__RFQ_BENCH_PAYLOAD__"
@@ -87,6 +88,11 @@ def _step_utilities(scenario: Scenario, outcome: dict[str, Any] | None) -> dict[
     }
 
 
+def _revenue_fields(scenario: Scenario, agreement: dict[str, Any] | None) -> dict[str, Any]:
+    r, best = revenue(scenario, agreement), best_price(scenario)
+    return {"revenue": r, "revenue_share": (r / best) if (r is not None and best) else None}
+
+
 def _episode_payload(trace: Trace, scenario: Scenario) -> dict[str, Any]:
     scored = score_trace(trace, scenario)
     # Also score the OTHER party (buyer, in A2A the persona/opponent side) so the
@@ -139,6 +145,9 @@ def _episode_payload(trace: Trace, scenario: Scenario) -> dict[str, Any]:
         "token_cost": trace.token_cost,
         "cost_usd": trace.cost_usd,
         "validity": dict(trace.validity),
+        # Agreed price (seller revenue / buyer spend; 0 without a deal) and its share
+        # of the seller's best price option — same functions as `rfq-bench report`.
+        **_revenue_fields(scenario, trace.agreement),
         # Policy constraints that fired, per party (invalid moves the harness corrected).
         "policy_fires": {
             role: sum(1 for s in trace.steps if s.adjusted and s.party == role)
@@ -204,7 +213,25 @@ def build_payload(
         },
         "scenarios": {sid: _scenario_payload(scenarios[sid]) for sid in sorted(used_ids)},
         "episodes": episodes,
+        # Plain-language tooltip texts for every strategy, opponent and scenario shown.
+        "glossary": _glossary(episodes, [scenarios[sid] for sid in sorted(used_ids)]),
     }
+
+
+def _glossary(episodes: list[dict[str, Any]], used: list[Scenario]) -> dict[str, dict[str, str]]:
+    # Custom strategies/personas (prompts/*/*.md in the working dir) fall back to
+    # the first sentence of their own guidance text.
+    from rfq_bench.agent.personas import load_persona_guidance
+    from rfq_bench.agent.prompts import load_strategy_guidance
+    from rfq_bench.report.glossary import build_glossary
+
+    return build_glossary(
+        strategies=sorted({e["strategy"] for e in episodes}),
+        opponents=sorted({e["opponent"] for e in episodes}),
+        scenarios=used,
+        strategy_guidance=load_strategy_guidance(),
+        persona_guidance=load_persona_guidance(),
+    )
 
 
 def render_html(payload: dict[str, Any]) -> str:

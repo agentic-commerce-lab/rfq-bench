@@ -44,18 +44,27 @@ class Report:
         lines.append(
             f"{label.capitalize()} score S_s and effect Δ vs control (95% CI clustered by scenario)"
         )
-        header = f"{label:<14}{'S_s':>8}{'Δ':>9}{'95% CI':>20}{'n':>7}"
+        # Name column fits the longest arm name (persona names can exceed 14 chars).
+        w = max([14, len(label) + 2, *(len(e.strategy) + 2 for e in self.effects)])
+        header = f"{label:<{w}}{'S_s':>8}{'Δ':>9}{'95% CI':>20}{'n':>7}"
         lines.append(header)
         lines.append("-" * len(header))
         for e in self.effects:
             is_ctl = self.control_present and e.strategy == self.control
             delta = "—" if is_ctl or e.delta != e.delta else f"{e.delta:+.1f}"
             ci = "—" if is_ctl or e.ci_low != e.ci_low else f"[{e.ci_low:+.1f}, {e.ci_high:+.1f}]"
-            lines.append(f"{e.strategy:<14}{e.score:>8.1f}{delta:>9}{ci:>20}{e.n_episodes:>7}")
+            lines.append(f"{e.strategy:<{w}}{e.score:>8.1f}{delta:>9}{ci:>20}{e.n_episodes:>7}")
         lines.append("")
         lines.append("Separate tracks (not part of the score)")
         show_cost = any(m.mean_cost_usd is not None for m in self.side.values())
-        h2 = f"{self.arm_label:<14}{'agree%':>8}{'joint':>8}{'pareto%':>9}{'rounds':>8}{'walk✓':>8}"
+        show_rev = any(m.total_revenue is not None for m in self.side.values())
+        # The agreed price is the seller's revenue and the buyer's spend.
+        rev_label = "spend" if self.scored_role == "buyer" else "revenue"
+        h2 = (
+            f"{self.arm_label:<{w}}{'agree%':>8}{'joint':>8}{'pareto%':>9}{'rounds':>8}{'walk✓':>8}"
+        )
+        if show_rev:
+            h2 += f"{rev_label:>12}{'%best':>7}"
         if show_cost:
             h2 += f"{'$/ep':>11}"
         lines.append(h2)
@@ -65,13 +74,23 @@ class Report:
             nan_walk = m.walk_away_accuracy != m.walk_away_accuracy
             walk = "—" if nan_walk else f"{m.walk_away_accuracy * 100:.0f}"
             row = (
-                f"{name:<14}{m.agreement_rate * 100:>7.0f}%{m.mean_joint_surplus:>8.2f}"
+                f"{name:<{w}}{m.agreement_rate * 100:>7.0f}%{m.mean_joint_surplus:>8.2f}"
                 f"{m.pareto_rate * 100:>8.0f}%{m.mean_rounds_to_close:>8.1f}{walk:>8}"
             )
+            if show_rev:
+                if m.total_revenue is None or m.mean_revenue_share is None:
+                    row += f"{'—':>12}{'—':>7}"
+                else:
+                    row += f"{m.total_revenue:>12,.0f}{m.mean_revenue_share * 100:>6.0f}%"
             if show_cost:
                 cost = "—" if m.mean_cost_usd is None else f"${m.mean_cost_usd:.5f}"
                 row += f"{cost:>11}"
             lines.append(row)
+        if show_rev:
+            lines.append(
+                f"({rev_label} = sum of agreed prices, no deal = 0 · %best = agreed price as a "
+                "share of the seller's best price option, averaged over episodes)"
+            )
         if show_cost:
             lines.append("($/ep = mean real spend per episode, from the provider's usage.cost)")
         return "\n".join(lines)

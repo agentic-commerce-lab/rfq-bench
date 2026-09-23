@@ -45,8 +45,8 @@ header.top .sub { color: var(--muted); font-size: 12.5px; }
 header.top .spacer { flex: 1; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
   box-shadow: var(--shadow); padding: 16px; margin-top: 16px; }
-.panel > .head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-.panel > .head .spacer { flex: 1; }
+.panel > .head { display: flex; align-items: center; gap: 8px 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.panel > .head .spacer { flex: 1; min-width: 0; }
 .hint { color: var(--muted); font-size: 12px; }
 button, select { font: inherit; color: inherit; }
 .btn { background: var(--chip); border: 1px solid var(--line); border-radius: 8px;
@@ -100,6 +100,9 @@ tbody tr.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 va
 
 /* two-column layout */
 .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+/* Grid children must be allowed to shrink below their content, or wide content
+   (charts, nowrap cells) forces the track wider than the card and overflows. */
+.cols > * { min-width: 0; }
 @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
 
 /* heatmap */
@@ -117,14 +120,17 @@ tbody tr.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 va
 
 /* replay */
 .replay-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; }
+/* Let both columns shrink so the plots/log never push the card past its width. */
+.replay-grid > * { min-width: 0; }
 @media (max-width: 900px) { .replay-grid { grid-template-columns: 1fr; } }
-.uholder { width: 100%; }
+.uholder { width: 100%; min-width: 0; overflow: hidden; }
 .transport { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .transport input[type=range] { flex: 1; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 13px; }
-.kv .k { color: var(--muted); } .kv .v { text-align: right; font-variant-numeric: tabular-nums; }
+.kv .k { color: var(--muted); }
+.kv .v { text-align: right; font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
 .qform { background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; margin-top: 10px;
-  font-family: var(--mono); font-size: 12.5px; }
+  font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
 .log { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px;
   margin-top: 10px; }
 .log table td { padding: 4px 8px; font-size: 12.5px; border-bottom: 1px solid var(--line);
@@ -136,6 +142,18 @@ tbody tr.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 va
   white-space: normal; max-width: 340px; }
 .log .say::before { content: "“"; } .log .say::after { content: "”"; }
 .log tr.past .say { color: var(--muted); }
+/* names with a plain-language explanation on hover */
+[data-tip] { text-decoration: underline dotted var(--line-strong); text-underline-offset: 3px;
+  cursor: help; }
+/* message the harness withheld because a policy constraint fired on the move */
+.withheld { font-size: 11.5px; color: var(--neg); margin-top: 3px; white-space: normal;
+  max-width: 340px; border-left: 2px solid var(--neg); padding: 2px 6px; }
+.withheld .say { color: var(--muted); }
+/* private rationale: shown to you only, never to the other agent */
+.private { font-style: normal; font-size: 11.5px; color: var(--muted); margin-top: 2px;
+  white-space: normal; max-width: 340px; overflow-wrap: anywhere; }
+.nowmsg .bubble .say { font-style: italic; }
+.nowmsg .bubble .say::before { content: "“"; } .nowmsg .bubble .say::after { content: "”"; }
 .fallback-tag { font-style: normal; font-size: 10.5px; font-weight: 600; color: var(--warn);
   border: 1px solid var(--warn); border-radius: 4px; padding: 0 4px; margin-left: 6px;
   vertical-align: middle; }
@@ -253,13 +271,18 @@ tbody tr.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 va
             <th class="sortable" data-k="pareto">pareto%</th>
             <th class="sortable" data-k="rounds">rounds</th>
             <th class="sortable" data-k="walk">walk✓</th>
+            <th class="sortable" data-k="revenue" id="revHead" title="sum of agreed prices (no deal = 0): the seller's revenue, the buyer's spend">revenue</th>
+            <th class="sortable" data-k="revShare" title="agreed price as a share of the seller's best price option, averaged over episodes (no deal = 0) — comparable across scenarios with different price scales">%best</th>
+            <th class="sortable" data-k="policy" title="policy constraints fired per episode, scored side: invalid moves the harness corrected">policy/ep</th>
           </tr></thead>
           <tbody></tbody>
         </table>
       </div>
       <p class="hint" style="margin:10px 2px 0">
         joint = mean joint surplus above BATNAs · pareto% over agreements ·
-        walk✓ = correct no-deal on no-ZOPA cases
+        walk✓ = correct no-deal on no-ZOPA cases ·
+        revenue = sum of agreed prices (no deal = 0; the buyer's spend in the buyer view) ·
+        %best = agreed price as a share of the seller's best price, comparable across scenarios
       </p>
     </section>
   </div>
@@ -321,6 +344,7 @@ tbody tr.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 va
           <th class="sortable" data-k="ub">u·buy</th>
           <th class="sortable" data-k="us">u·sell</th>
           <th class="sortable" data-k="rounds_to_close">rounds</th>
+          <th class="sortable" data-k="policy" title="policy constraints fired in this episode (both sides)">policy</th>
           <th>valid</th>
         </tr></thead>
         <tbody></tbody>
@@ -346,6 +370,14 @@ tbody tr.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 va
 "use strict";
 const DATA = JSON.parse(document.getElementById("payload").textContent);
 const META = DATA.meta, SCEN = DATA.scenarios, EPS = DATA.episodes;
+// Plain-language tooltip texts (report/glossary.py): hover a strategy, opponent
+// or scenario name to see what it means.
+const GLOSS = DATA.glossary || {strategy:{}, opponent:{}, scenario:{}};
+function tipOf(kind, name){ return (kind && (GLOSS[kind]||{})[name]) || ""; }
+function tipAttr(kind, name){ const t = tipOf(kind, name); return t ? ` title="${esc(t)}" data-tip` : ""; }
+// Rows are labelled by the scored arm: strategies (seller view) or personas (buyer view).
+function armKind(){ return isBuyerSide() ? "opponent" : "strategy"; }
+const DIM_KIND = { opponent:"opponent", scenario_id:"scenario" };
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
 const fmt = (x, d=1) => (x==null || Number.isNaN(x)) ? "—" : x.toFixed(d);
@@ -475,6 +507,7 @@ function buildFilters(){
     for (const v of DIMS[k]){
       const c = document.createElement("button");
       c.className="chip"; c.textContent=v;
+      const tip = tipOf(DIM_KIND[k], v); if (tip){ c.title = tip; c.dataset.tip = ""; }
       c.setAttribute("aria-pressed", active[k].has(v));
       c.onclick = () => {
         if (active[k].has(v)) active[k].delete(v); else active[k].add(v);
@@ -521,6 +554,8 @@ function computeEffects(eps){
   return rows;
 }
 
+// Episodes whose scenario has a price issue (revenue is defined for them).
+function revRows(eps){ return eps.filter(e=>e.revenue!=null && e.revenue_share!=null); }
 function computeTracks(eps){
   const strategies = [...new Set(eps.map(armOf))];
   const out = {};
@@ -545,6 +580,10 @@ function computeTracks(eps){
       pareto: paretoFlags.length? paretoFlags.filter(Boolean).length/paretoFlags.length : 0,
       rounds: se.length? mean(se.map(e=>e.rounds_to_close)) : 0,
       walk: walkCases.length? walkOk.length/walkCases.length : NaN,
+      policy: se.length? mean(se.map(e=>(e.policy_fires||{})[scoredParty(e)]||0)) : 0,
+      // Agreed price per episode (seller revenue / buyer spend), computed in Python.
+      revenue: revRows(se).length ? revRows(se).reduce((a,e)=>a+e.revenue,0) : null,
+      revShare: revRows(se).length ? mean(revRows(se).map(e=>e.revenue_share)) : null,
     };
   }
   return out;
@@ -593,7 +632,7 @@ function renderLeaderboard(eps){
       inner += `<div title="Δ ${signed(r.delta)}" style="position:absolute;left:calc(${d}% - 4px);top:4px;width:8px;height:8px;border-radius:50%;background:${col}"></div>`;
     }
     bar.innerHTML = inner;
-    row.innerHTML = `<div class="name" title="${r.strategy}">${r.strategy}</div>
+    row.innerHTML = `<div class="name" title="${esc(tipOf(armKind(), r.strategy) || r.strategy)}">${r.strategy}</div>
       <div class="dval" style="color:${col}">${r.isControl?"ctrl":signed(r.delta)}</div>`;
     row.appendChild(bar);
     forest.appendChild(row);
@@ -606,7 +645,7 @@ function renderLeaderboard(eps){
     const ci = r.isControl ? '<span class="ci">—</span>'
       : `<span class="ci">[${signed(r.ci_low)}, ${signed(r.ci_high)}]</span>`;
     const dcol = r.isControl?"":(r.delta>=0?"pos":"neg");
-    tr.innerHTML = `<td>${r.strategy}</td><td class="num">${fmt(r.score)}</td>
+    tr.innerHTML = `<td${tipAttr(armKind(), r.strategy)}>${r.strategy}</td><td class="num">${fmt(r.score)}</td>
       <td class="num ${dcol}">${r.isControl?"—":signed(r.delta)}</td>
       <td>${ci}</td><td class="num muted">${r.n}</td>`;
     tb.appendChild(tr);
@@ -621,12 +660,15 @@ function renderTracks(eps){
   for (const r of rows){
     const tr = document.createElement("tr");
     if (r.strategy===controlName()) tr.className="control";
-    tr.innerHTML = `<td>${r.strategy}</td>
+    tr.innerHTML = `<td${tipAttr(armKind(), r.strategy)}>${r.strategy}</td>
       <td class="num">${pct(r.agree)}</td>
       <td class="num">${fmt(r.joint,2)}</td>
       <td class="num">${pct(r.pareto)}</td>
       <td class="num">${fmt(r.rounds,1)}</td>
-      <td class="num">${Number.isNaN(r.walk)?'<span class="muted">—</span>':pct(r.walk)}</td>`;
+      <td class="num">${Number.isNaN(r.walk)?'<span class="muted">—</span>':pct(r.walk)}</td>
+      <td class="num">${r.revenue==null?'<span class="muted">—</span>':Math.round(r.revenue).toLocaleString("en-US")}</td>
+      <td class="num">${r.revShare==null?'<span class="muted">—</span>':pct(r.revShare)}</td>
+      <td class="num">${r.policy>0?`<span class="neg">${fmt(r.policy,2)}</span>`:'<span class="muted">0</span>'}</td>`;
     tb.appendChild(tr);
   }
 }
@@ -707,10 +749,10 @@ function renderHeatmap(eps){
     (acc[a] ||= {}); (acc[a][c] ||= []).push(qOf(e));
   }
   let html = `<table class="heat"><thead><tr><th></th>`;
-  for (const c of cols) html += `<th>${c}</th>`;
+  for (const c of cols) html += `<th${tipAttr(DIM_KIND[heatDim], c)}>${c}</th>`;
   html += `</tr></thead><tbody>`;
   for (const s of strategies){
-    html += `<tr><td class="rowhead">${s}</td>`;
+    html += `<tr><td class="rowhead"${tipAttr(armKind(), s)}>${s}</td>`;
     for (const c of cols){
       const arr = acc[s] && acc[s][c];
       if (!arr || !arr.length){ html += `<td class="cell dim" style="background:var(--chip)">·</td>`; continue; }
@@ -749,6 +791,9 @@ function applySideLabels(){
   if (lbHead) lbHead.textContent = armHead;
   const tkHead = document.querySelector('#tracks th');
   if (tkHead) tkHead.textContent = armHead;
+  // The agreed price is the seller's revenue and the buyer's spend.
+  const revHead = $("#revHead");
+  if (revHead) revHead.textContent = buyer ? "spend" : "revenue";
 }
 if (META.has_a2a){ $("#sideToggle").hidden = false; $("#sideLabel").hidden = false; }
 $$("#sideToggle button").forEach(b=> b.onclick = () => {
@@ -775,6 +820,7 @@ function renderEpisodes(eps){
     strategy:e=>e.strategy, opponent:e=>e.opponent, scenario_id:e=>e.scenario_id,
     target_role:e=>e.target_role, first_speaker:e=>e.first_speaker, seed:e=>e.seed,
     outcome_kind:e=>e.outcome_kind, rounds_to_close:e=>e.rounds_to_close,
+    policy:e=>policyTotal(e),
   };
   list = sortRows(list, episodeSort, acc);
   $("#episodeCount").textContent = `${list.length} shown`;
@@ -787,7 +833,7 @@ function renderEpisodes(eps){
     const tr = document.createElement("tr"); tr.className="clickable";
     if (selectedEpisode===e) tr.classList.add("selected");
     const flags = validityFlags(e);
-    tr.innerHTML = `<td>${e.strategy}</td><td>${e.opponent}</td><td>${e.scenario_id}</td>
+    tr.innerHTML = `<td${tipAttr("strategy", e.strategy)}>${e.strategy}</td><td${tipAttr("opponent", e.opponent)}>${e.opponent}</td><td${tipAttr("scenario", e.scenario_id)}>${e.scenario_id}</td>
       <td><span class="badge role">${e.target_role}</span></td>
       <td class="muted">${e.first_speaker}</td><td class="num muted">${e.seed}</td>
       <td><span class="badge ${e.outcome_kind}">${e.outcome_kind}</span></td>
@@ -795,10 +841,20 @@ function renderEpisodes(eps){
       <td class="num">${fmt(e.utilities.buyer,2)}</td>
       <td class="num">${fmt(e.utilities.seller,2)}</td>
       <td class="num muted">${e.rounds_to_close}</td>
+      <td class="num">${policyCell(e)}</td>
       <td>${flags}</td>`;
     tr.onclick = () => { selectedEpisode=e; renderEpisodes(filteredEpisodes()); renderReplay(e); };
     tb.appendChild(tr);
   }
+}
+// Policy constraints (invalid moves the harness corrected: snap to grid, or a
+// quote/accept below the walk-away raised to it).
+function policyTotal(e){ const f=e.policy_fires||{}; return (f.buyer||0)+(f.seller||0); }
+function scoredParty(e){ return isBuyerSide() ? "buyer" : e.target_role; }
+function policyCell(e){
+  const n = policyTotal(e); if (!n) return '<span class="muted">0</span>';
+  const f = e.policy_fires||{};
+  return `<span class="neg" title="buyer ${f.buyer||0}, seller ${f.seller||0}">${n}</span>`;
 }
 function validityFlags(e){
   const v=e.validity||{}; const map=[["legal_agreement","L"],["no_batna_violation","B"],["correct_walk_away","W"]];
@@ -808,11 +864,29 @@ function validityFlags(e){
 /* ---------- replay ---------- */
 let uplots = [];
 function destroyPlots(){ uplots.forEach(p=>{try{p.destroy()}catch(e){}}); uplots=[]; }
+// uPlot renders at a fixed pixel width; without this a window resize leaves the
+// canvas wider than its (now narrower) column and overflows the replay card.
+let _plotResizeT = null;
+window.addEventListener("resize", () => {
+  clearTimeout(_plotResizeT);
+  _plotResizeT = setTimeout(() => {
+    uplots.forEach(u => {
+      const host = u.root && u.root.parentElement;
+      const w = host ? host.clientWidth : 0;
+      if (w) { try { u.setSize({ width: Math.max(260, w), height: u.height }); } catch (e) {} }
+    });
+  }, 120);
+});
 function renderReplay(e){
   destroyPlots();
   const sc = SCEN[e.scenario_id];
   $("#replayTitle").textContent =
     `${e.strategy} vs ${e.opponent} · ${e.scenario_id} · agent = ${e.target_role} · opens ${e.first_speaker} · seed ${e.seed}`;
+  $("#replayTitle").title = [
+    [e.strategy, tipOf("strategy", e.strategy)],
+    [e.opponent, tipOf("opponent", e.opponent)],
+    [e.scenario_id, tipOf("scenario", e.scenario_id)],
+  ].filter(([, t]) => t).map(([n, t]) => `${n}: ${t}`).join("\n");
   const body = $("#replayBody");
   body.innerHTML = `
     <div class="replay-grid">
@@ -1018,12 +1092,33 @@ function stepTag(s){
   if (s.adjusted) return `<span class="fallback-tag" title="${esc(s.adjust_reason||'adjusted')}">adjusted</span>`;
   return "";
 }
+// What an agent said with a move: the public `message` (A2A channel — the other
+// side read it) in quotes, and the private `rationale` (never shown to anyone
+// but you) as a dimmer, labelled line.
+function talkHtml(s){
+  let h = "";
+  if (s.message && s.message_withheld){
+    h += `<div class="withheld"><b>withheld — not sent to the opponent</b> (a policy constraint fired on this move): <span class="say">${esc(s.message)}</span></div>`;
+  } else if (s.message){
+    const cut = s.message_truncated ? ` <span class="private" title="the other side received only the first part">(truncated on delivery)</span>` : "";
+    h += `<div class="say">${esc(s.message)}</div>${cut}`;
+  }
+  if (s.rationale) h += `<div class="private"><b>private:</b> ${esc(s.rationale)}</div>`;
+  return h;
+}
 function buildLog(e){
-  const hasMsg = e.steps.some(s=>s.rationale);
+  const hasMsg = e.steps.some(s=>s.message || s.rationale);
   $("#logTitle").textContent = hasMsg ? "Action log & agent messages" : "Action log";
   const nAdj = e.steps.filter(s=>s.adjusted).length;
   let banner = "";
   if (e.errored) banner += `<div class="override-banner">⚠ episode EXCLUDED from scoring — the agent produced an unusable reply: ${esc(e.error_reason||'error')}.</div>`;
+  const nWithheld = e.steps.filter(s=>s.message_withheld).length;
+  if (nAdj){
+    const kinds = {};
+    e.steps.filter(s=>s.adjusted).forEach(s=>{ const k=s.adjust_kind||"other"; kinds[k]=(kinds[k]||0)+1; });
+    const kindTxt = Object.entries(kinds).map(([k,n])=>`${k} ${n}`).join(", ");
+    banner += `<div class="override-banner"><b>Policy constraints fired:</b> ${kindTxt}${nWithheld?` · ${nWithheld} message${nWithheld>1?"s":""} withheld from the opponent`:""}.</div>`;
+  }
   if (nAdj) banner += `<div class="override-banner">${nAdj} of ${e.steps.length} moves were adjusted — an off-grid value snapped to the nearest legal tier, or a below-floor quote clamped up to the shop's reservation floor. No scripted values are ever substituted. Highlighted below.</div>`;
   $("#overrideBanner").innerHTML = banner;
   const tb=$("#logBody"); tb.innerHTML="";
@@ -1031,9 +1126,8 @@ function buildLog(e){
     const tr=document.createElement("tr"); tr.dataset.i=i;
     const oc = s.outcome? Object.entries(s.outcome).map(([k,v])=>`${k}=${v}`).join(" "):"";
     const tag = stepTag(s);
-    const say = s.rationale ? `<div class="say">${esc(s.rationale)}</div>` : "";
     tr.innerHTML=`<td class="muted">${s.round}</td><td>${s.party}</td>
-      <td><b>${s.action}</b>${tag}</td><td><span class="mono">${oc}</span>${say}${adjustHtml(s)}</td>`;
+      <td><b>${s.action}</b>${tag}</td><td><span class="mono">${oc}</span>${talkHtml(s)}${adjustHtml(s)}</td>`;
     tr.onclick=()=>{ $("#scrub").value=i; setCursor(e,i); };
     tb.appendChild(tr);
   });
@@ -1048,9 +1142,9 @@ function setCursor(e, idx){
     const tag = stepTag(cur);
     const over = adjustHtml(cur);
     const full = fullResponseHtml(cur);
-    if (cur.rationale){
+    if (cur.message || cur.rationale){
       nm.innerHTML = `<span class="who ${who}">${who}</span>
-        <div class="bubble"><div class="act">${cur.action}${cur.outcome?` · ${Object.entries(cur.outcome).map(([k,v])=>k+"="+v).join(" ")}`:""} ${tag}</div>${esc(cur.rationale)}${over}${full}</div>`;
+        <div class="bubble"><div class="act">${cur.action}${cur.outcome?` · ${Object.entries(cur.outcome).map(([k,v])=>k+"="+v).join(" ")}`:""} ${tag}</div>${talkHtml(cur)}${over}${full}</div>`;
     } else if (full){
       // No one-line rationale, but the model did reply (e.g. a malformed answer
       // that fell back) — show the raw reply/thinking so it can be inspected.

@@ -36,6 +36,29 @@ def is_pareto_efficient(scenario: Scenario, outcome: dict[str, Any]) -> bool:
     return True
 
 
+# The issue whose agreed value is the money that changes hands.
+PRICE_ISSUE = "price"
+
+
+def revenue(scenario: Scenario, agreement: dict[str, Any] | None) -> float | None:
+    """The agreed price: the seller's revenue (and the buyer's spend) for one episode.
+
+    0 when there is no deal; None when the scenario has no price issue.
+    """
+    if not any(i.name == PRICE_ISSUE for i in scenario.issues):
+        return None
+    return 0.0 if agreement is None else float(agreement[PRICE_ISSUE])
+
+
+def best_price(scenario: Scenario) -> float | None:
+    """The seller's best price option (the most revenue a deal can bring)."""
+    issue = next((i for i in scenario.issues if i.name == PRICE_ISSUE), None)
+    if issue is None:
+        return None
+    utils = scenario.seller.preference_for(PRICE_ISSUE).value_utilities
+    return float(max(zip(issue.values, utils, strict=True), key=lambda p: p[1])[0])
+
+
 @dataclass(frozen=True)
 class SideMetrics:
     strategy: str
@@ -48,6 +71,11 @@ class SideMetrics:
     mean_token_cost: float
     walk_away_accuracy: float  # correct no-deal on no-ZOPA scenarios
     mean_cost_usd: float | None = None  # real USD/episode when the provider reports it
+    # Sum of agreed prices over the episodes (no deal = 0), and the agreed price as a
+    # share of the seller's best price option, averaged — comparable across scenarios
+    # with different price scales. None when no scenario has a price issue.
+    total_revenue: float | None = None
+    mean_revenue_share: float | None = None
 
 
 def side_metrics(strategy: str, traces: list[Trace], scenarios: dict[str, Scenario]) -> SideMetrics:
@@ -71,6 +99,15 @@ def side_metrics(strategy: str, traces: list[Trace], scenarios: dict[str, Scenar
     costs = [t.cost_usd for t in traces if t.cost_usd is not None]
     mean_cost = (sum(costs) / len(costs)) if costs else None
 
+    revenues: list[float] = []
+    shares: list[float] = []
+    for t in traces:
+        scenario = scenarios[t.scenario_id]
+        r, best = revenue(scenario, t.agreement), best_price(scenario)
+        if r is not None and best:
+            revenues.append(r)
+            shares.append(r / best)
+
     return SideMetrics(
         strategy=strategy,
         n=n,
@@ -82,6 +119,8 @@ def side_metrics(strategy: str, traces: list[Trace], scenarios: dict[str, Scenar
         mean_token_cost=mean([float(t.token_cost) for t in traces]),
         walk_away_accuracy=(len(walk_correct) / len(walk_cases)) if walk_cases else float("nan"),
         mean_cost_usd=mean_cost,
+        total_revenue=sum(revenues) if revenues else None,
+        mean_revenue_share=mean(shares) if shares else None,
     )
 
 
