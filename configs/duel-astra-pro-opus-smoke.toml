@@ -10,8 +10,7 @@
 # Matrix: 1 scenario × control × neutral × 2 first speakers × 1 seed × 2 pairings (cross)
 #       = 4 episodes: Astra sells to Opus and Opus sells to Astra, each opening order.
 #
-# Needs RFQ_BENCH_TOOL_CHOICE=auto in .env (Opus rejects forced tool calls); both
-# models then use the same protocol. Model ids are pinned (not the ~latest alias).
+# tool_choice and the other decoding settings are pinned in [llm] below. Model ids are pinned (not the ~latest alias).
 
 [run]
 agent       = "duel"
@@ -32,6 +31,18 @@ overwrite   = true                       # a smoke test is disposable: each run 
 out           = "results/duel_astra_pro_opus_smoke.jsonl"
 dashboard     = true
 dashboard_out = "results/duel_astra_pro_opus_smoke_dashboard.html"
+
+[llm]
+# The decoding condition, pinned so the run does not depend on .env. These are the
+# values the 2026-09-24 duels ran with (recorded in their traces). tool_choice
+# must stay "auto": Claude with extended thinking rejects forced tool calls, and
+# both models must use the same protocol.
+temperature = 0.0
+max_tokens  = 4096
+seed        = 7
+tool_choice = "auto"
+max_reasks  = 2
+strict_tool = false
 
 [dashboard]
 n_boot = 2000

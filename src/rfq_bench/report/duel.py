@@ -125,6 +125,17 @@ class ModelUsage:
         return self.cached_tokens / self.prompt_tokens if self.prompt_tokens else None
 
 
+def model_providers(traces: Iterable[Trace]) -> dict[str, dict[str, int]]:
+    """Which upstream providers served each model's moves, with call counts."""
+    out: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for t in traces:
+        for s in t.steps:
+            model = t.models_by_role.get(s.party)
+            if model is not None and s.provider:
+                out[model][s.provider] += 1
+    return {m: dict(sorted(c.items(), key=lambda kv: -kv[1])) for m, c in out.items()}
+
+
 def model_usage(traces: Iterable[Trace]) -> dict[str, ModelUsage]:
     """Sum each model's per-role tokens and spend over every episode it played in."""
     acc: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
@@ -171,6 +182,11 @@ class Duel:
     side: dict[Pairing, dict[str, float | None]]
     # Per-model token and USD spend over every side it played (see model_usage).
     usage: dict[str, ModelUsage] = field(default_factory=dict)
+    # Upstream providers that served each model's calls: model -> {provider: calls}.
+    providers: dict[str, dict[str, int]] = field(default_factory=dict)
+    # When and from which code version the traces were produced (provenance).
+    started: tuple[str, ...] = ()
+    code_versions: tuple[str, ...] = ()
     warnings: list[str] = field(default_factory=list)
 
     def label(self, p: Pairing) -> str:
@@ -246,6 +262,19 @@ class Duel:
                     f"({u.prompt_tokens:,} prompt / {u.completion_tokens:,} completion) · "
                     f"{tpc} tokens/call · {per}/call"
                 )
+        if self.providers:
+            lines.append("")
+            lines.append("Served by (upstream provider: calls)")
+            for m in (self.model_a, self.model_b):
+                served = self.providers.get(m)
+                if served:
+                    lines.append(
+                        f"  {_short(m)}: " + ", ".join(f"{p} {n}" for p, n in served.items())
+                    )
+        if self.started or self.code_versions:
+            lines.append("")
+            when = f"{self.started[0]} … {self.started[-1]}" if self.started else "unknown"
+            lines.append(f"Run: {when} · code {', '.join(self.code_versions) or 'unknown'}")
         return "\n".join(lines)
 
 
@@ -323,6 +352,9 @@ def duel_warnings(traces: list[Trace]) -> list[str]:
         vals = sorted({str(get(t)) for t in traces})
         if len(vals) > 1:
             warns.append(f"{label} varies within the duel file: {vals}")
+    from rfq_bench.provenance import condition_differences
+
+    warns += condition_differences([t.provenance for t in traces if t.provenance])
     by_pair: dict[Pairing, int] = defaultdict(int)
     for t in traces:
         p = pairing_of(t)
@@ -404,6 +436,13 @@ def build_duel(
         pairing_scores=pairing_scores,
         side=side,
         usage=model_usage(traces),
+        providers=model_providers(traces),
+        started=tuple(
+            sorted({t.provenance["started_at"] for t in traces if "started_at" in t.provenance})
+        ),
+        code_versions=tuple(
+            sorted({t.provenance["code_version"] for t in traces if "code_version" in t.provenance})
+        ),
         warnings=duel_warnings(traces),
     )
 
@@ -498,6 +537,8 @@ def duel_payload(
             for m in (d.model_a, d.model_b)
             if (u := d.usage.get(m)) is not None
         ],
+        "providers": d.providers,
+        "run": {"started": list(d.started), "code_versions": list(d.code_versions)},
         "warnings": list(d.warnings),
         # Replay: the same per-episode payload the main dashboard renders.
         "meta": {"has_messages": meta.get("has_messages", False)},

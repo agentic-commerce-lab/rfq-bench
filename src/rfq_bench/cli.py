@@ -8,7 +8,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import click
 import typer
@@ -18,6 +18,7 @@ from rfq_bench.agent.prompts import load_strategy_guidance, strategy_instruction
 from rfq_bench.config import (
     DEFAULT_CONFIG_NAME,
     BenchConfig,
+    LLMSection,
     discover_config,
     example_config_toml,
     load_config,
@@ -25,6 +26,7 @@ from rfq_bench.config import (
 from rfq_bench.core.contracts import Role, Scenario, Trace
 from rfq_bench.datasets import load_scenarios
 from rfq_bench.opponents import OPPONENTS
+from rfq_bench.provenance import fingerprint, run_provenance, tool_fingerprint
 from rfq_bench.report import build_dashboard, build_report
 from rfq_bench.runners.offline import (
     EpisodeSpec,
@@ -35,6 +37,9 @@ from rfq_bench.runners.offline import (
 )
 from rfq_bench.store import TraceWriter, read_traces
 from rfq_bench.strategies import STRATEGIES
+
+if TYPE_CHECKING:
+    from rfq_bench.agent.settings import AgentSettings
 
 app = typer.Typer(add_completion=False, help="Within-agent negotiation benchmark.")
 
@@ -127,6 +132,15 @@ def _write_duel_dashboard(
     return len(duel)
 
 
+def _agent_settings(llm: LLMSection | None = None) -> AgentSettings:
+    """Environment/.env settings with the config's ``[llm]`` overrides applied."""
+    from rfq_bench.agent.settings import AgentSettings
+
+    settings = AgentSettings()
+    overrides = llm.overrides() if llm is not None else {}
+    return settings.model_copy(update=overrides) if overrides else settings
+
+
 def _csv(value: str | None, default: tuple[str, ...]) -> list[str]:
     if not value:
         return list(default)
@@ -192,6 +206,7 @@ def _print_cost_estimate(
     agent: str,
     max_rounds: int | None,
     models: tuple[str, str] | None = None,
+    settings: AgentSettings | None = None,
 ) -> None:
     """Print the model-spend ceiling for LLM runs (see agent.cost_estimate).
 
@@ -201,11 +216,10 @@ def _print_cost_estimate(
     if agent not in ("llm", "a2a", "duel"):
         return
     from rfq_bench.agent.cost_estimate import estimate_run_cost, split_estimate
-    from rfq_bench.agent.settings import AgentSettings
 
     try:
         if agent == "duel" and models is not None:
-            base = AgentSettings()
+            base = settings or _agent_settings()
             # Each model makes half the calls (one side per episode, both pairings).
             est = split_estimate(
                 [
@@ -220,7 +234,7 @@ def _print_cost_estimate(
             )
         else:
             est = estimate_run_cost(
-                specs, agent=agent, max_rounds=max_rounds, settings=AgentSettings()
+                specs, agent=agent, max_rounds=max_rounds, settings=settings or _agent_settings()
             )
     except Exception as exc:  # an estimate must never block a run
         typer.echo(f"  cost estimate : unavailable ({type(exc).__name__}: {exc})")
@@ -297,9 +311,7 @@ def _print_time_estimate(
 
                 model = LayaSettings().to_llm_config().model
             else:
-                from rfq_bench.agent.settings import AgentSettings
-
-                model = AgentSettings().model
+                model = _agent_settings().model
             est = estimate_run_time(
                 specs,
                 agent=agent,
@@ -330,6 +342,20 @@ def _print_time_estimate(
     if not est.same_model:
         typer.echo(f"{pad}model speed varies widely — treat this as an order of magnitude")
     typer.echo(f"{pad}re-asks, retries and rate limits come on top; live ETA shows once running")
+
+
+def _print_llm_settings(settings: AgentSettings, from_config: dict[str, object]) -> None:
+    """Show the decoding condition this run uses and where each value came from."""
+    keys = ("temperature", "max_tokens", "seed", "tool_choice", "max_reasks", "strict_tool")
+    parts = [
+        f"{k}={getattr(settings, k)!r}" + ("" if k in from_config else " (.env)") for k in keys
+    ]
+    typer.echo(f"  llm           : {', '.join(parts)}")
+    if len(from_config) < len(keys):
+        typer.echo(
+            "                  values marked (.env) come from the environment; pin them in the "
+            "config's [llm] table to make the run reproducible"
+        )
 
 
 def _print_run_plan(
@@ -677,7 +703,12 @@ def run(
     if not specs:
         typer.echo("Nothing to run with the current settings.", err=True)
         raise typer.Exit(1)
-    _print_cost_estimate(specs, agent=agent, max_rounds=max_rounds, models=duel_models)
+    llm_settings = _agent_settings(cfg.llm) if agent in ("llm", "a2a", "duel") else None
+    if llm_settings is not None:
+        _print_llm_settings(llm_settings, cfg.llm.overrides())
+    _print_cost_estimate(
+        specs, agent=agent, max_rounds=max_rounds, models=duel_models, settings=llm_settings
+    )
     _print_time_estimate(
         specs,
         agent=agent,
@@ -697,12 +728,13 @@ def run(
     opponent_factory: Callable[[EpisodeSpec], Any] | None = None
     llm_config = None
     llm_config_for: Callable[[EpisodeSpec], Any] | None = None
+    # Fingerprints of the model-visible texts per episode (see rfq_bench.provenance).
+    episode_provenance: Callable[[EpisodeSpec], dict[str, str]] | None = None
     if agent in ("llm", "a2a", "duel"):
         from rfq_bench.agent.llm_client import LLMClient
         from rfq_bench.agent.negotiator import LLMNegotiator
-        from rfq_bench.agent.settings import AgentSettings
 
-        settings = AgentSettings()
+        settings = llm_settings or _agent_settings(cfg.llm)
         client = LLMClient(settings)  # httpx-based; safe to share across worker threads
         llm_config = settings.to_llm_config()
         strict = settings.strict_tool
@@ -711,6 +743,32 @@ def run(
         # Effective guidance = built-ins + any prompts/{strategies,personas}/*.md.
         strat_guidance = load_strategy_guidance()
         persona_guidance = load_persona_guidance()
+        two_llms = agent in ("a2a", "duel")
+
+        def llm_provenance(spec: EpisodeSpec) -> dict[str, str]:
+            if two_llms:
+                persona = spec.persona or "neutral"
+                return {
+                    "system_prompt_seller": fingerprint(seller_prompt),
+                    "system_prompt_buyer": fingerprint(buyer_prompt),
+                    f"instruction_seller.{spec.strategy}": fingerprint(
+                        strategy_instruction(spec.strategy, strat_guidance)
+                    ),
+                    f"instruction_buyer.{persona}": fingerprint(
+                        persona_instruction(persona, persona_guidance)
+                    ),
+                    "tool_schema": tool_fingerprint(strict=strict, message_channel=True),
+                }
+            role = spec.target_role
+            return {
+                f"system_prompt_{role}": fingerprint(settings.system_prompt_for(role)),
+                f"instruction_{role}.{spec.strategy}": fingerprint(
+                    strategy_instruction(spec.strategy, strat_guidance)
+                ),
+                "tool_schema": tool_fingerprint(strict=strict, message_channel=False),
+            }
+
+        episode_provenance = llm_provenance
         if agent == "duel":
             # One client per model; decoding, prompts and tool_choice are shared, so
             # the model is the only thing that differs between pairings.
@@ -783,6 +841,11 @@ def run(
         accept_thr = laya_settings.accept_threshold
         walk_thr = laya_settings.walk_threshold
         laya_guidance = load_strategy_guidance()  # built-ins + prompts/strategies/*.md
+        episode_provenance = lambda spec: {  # noqa: E731
+            f"instruction_{spec.target_role}.{spec.strategy}": fingerprint(
+                strategy_instruction(spec.strategy, laya_guidance)
+            )
+        }
         # Laya plays the tested (target) side and picks its own offer; the strategy is
         # injected as guidance text it reads. The opponent stays scripted.
         agent_factory = lambda spec: LayaNegotiator(  # noqa: E731
@@ -809,6 +872,8 @@ def run(
         if wait > 0:
             time.sleep(wait)
 
+    run_prov = run_provenance()
+
     def run_one(spec: EpisodeSpec) -> Trace:
         # A fresh policy per episode keeps workers independent; the LLM client is
         # shared and thread-safe. Episodes are deterministic given their spec for
@@ -822,6 +887,7 @@ def run(
             opponent_policy=opp,
             llm_config=llm_config_for(spec) if llm_config_for else llm_config,
             max_rounds=max_rounds,
+            provenance={**run_prov, **(episode_provenance(spec) if episode_provenance else {})},
         )
 
     stats_lock = threading.Lock()
@@ -1313,9 +1379,14 @@ def config_show(
     typer.echo(f"config: {cfg_path}")
     run_set = cfg.run.model_dump(exclude_none=True)
     dash_set = cfg.dashboard.model_dump(exclude_none=True)
+    llm_set = cfg.llm.overrides()
     if run_set:
         typer.echo("[run]")
         for k, v in run_set.items():
+            typer.echo(f"  {k} = {v!r}")
+    if llm_set:
+        typer.echo("[llm]")
+        for k, v in llm_set.items():
             typer.echo(f"  {k} = {v!r}")
     if dash_set:
         typer.echo("[dashboard]")

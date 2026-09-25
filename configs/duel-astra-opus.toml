@@ -16,8 +16,7 @@
 # One seed: requests use RFQ_BENCH_SEED at temperature 0, so extra seeds would
 # repeat the same requests rather than add independent samples.
 #
-# Needs RFQ_BENCH_TOOL_CHOICE=auto in .env (Opus rejects forced tool calls); both
-# models then use the same protocol. Model ids are pinned (not the ~latest alias).
+# tool_choice and the other decoding settings are pinned in [llm] below. Model ids are pinned (not the ~latest alias).
 # Check the cost/time preview against your remaining credit before confirming.
 #
 # COST: GPT-6 Astra is the premium tier ($10/M in, $50/M out — 5x Sol, 2.5x Opus).
@@ -48,6 +47,18 @@ overwrite   = true                       # one clean result per run; copy the fi
 out           = "results/duel_astra_opus.jsonl"
 dashboard     = true
 dashboard_out = "results/duel_astra_opus_dashboard.html"
+
+[llm]
+# The decoding condition, pinned so the run does not depend on .env. These are the
+# values the 2026-09-24 duels ran with (recorded in their traces). tool_choice
+# must stay "auto": Claude with extended thinking rejects forced tool calls, and
+# both models must use the same protocol.
+temperature = 0.0
+max_tokens  = 4096
+seed        = 7
+tool_choice = "auto"
+max_reasks  = 2
+strict_tool = false
 
 [dashboard]
 n_boot = 2000

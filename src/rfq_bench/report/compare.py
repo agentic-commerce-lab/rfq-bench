@@ -133,6 +133,17 @@ def condition_warnings(a: list[Trace], b: list[Trace]) -> list[str]:
     diff = [c for c in set(dl_a) & set(dl_b) if dl_a[c] != dl_b[c]]
     if diff:
         warns.append(f"deadline differs on {len(diff)} matched cell(s) (a --max-rounds cap?)")
+    from rfq_bench.provenance import condition_differences
+
+    prov_a = [t.provenance for t in a if t.provenance]
+    prov_b = [t.provenance for t in b if t.provenance]
+    warns += condition_differences(prov_a, prov_b)
+    if bool(prov_a) != bool(prov_b):
+        older = "A" if not prov_a else "B"
+        warns.append(
+            f"run {older} has no provenance (older traces): prompts and tool schema "
+            "cannot be checked"
+        )
     if len({t.llm_config.model for t in a + b}) > 2:
         warns.append("a file mixes several models; results pool them per file")
     return warns

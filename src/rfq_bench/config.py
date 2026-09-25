@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -59,12 +60,36 @@ class DashboardConfig(BaseModel):
     seed: int | None = None
 
 
+class LLMSection(BaseModel):
+    """The ``[llm]`` table: decoding settings that define the benchmark condition.
+
+    Anything set here overrides the environment/.env for that run, so a config
+    that pins these is reproducible on any machine. The endpoint, API key and
+    model stay in the environment (``--agent duel`` takes its models from
+    ``[run].models``). All values are recorded in every trace.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    temperature: float | None = None
+    max_tokens: int | None = Field(default=None, ge=1)
+    seed: int | None = None  # request seed forwarded to the model (not [run].seeds)
+    tool_choice: Literal["forced", "required", "auto"] | None = None
+    max_reasks: int | None = Field(default=None, ge=0)
+    strict_tool: bool | None = None
+
+    def overrides(self) -> dict[str, object]:
+        """The keys this config sets, by AgentSettings field name."""
+        return self.model_dump(exclude_none=True)
+
+
 class BenchConfig(BaseModel):
-    """Top-level config: ``[run]`` plus ``[dashboard]`` tables."""
+    """Top-level config: ``[run]``, ``[llm]`` and ``[dashboard]`` tables."""
 
     model_config = ConfigDict(extra="forbid")
 
     run: RunConfig = Field(default_factory=RunConfig)
+    llm: LLMSection = Field(default_factory=LLMSection)
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
 
 
@@ -127,6 +152,16 @@ overwrite      = false         # truncate the output file before writing
 out            = "results/offline_v0.jsonl"
 dashboard      = true                  # rebuild the dashboard after the run
 dashboard_out  = "results/dashboard.html"
+
+[llm]
+# Decoding settings for LLM agents. Set here, they override .env for this run,
+# which makes the config reproducible on any machine. All are recorded in traces.
+# temperature  = 0.0
+# max_tokens   = 4096
+# seed         = 7                 # request seed forwarded to the model
+# tool_choice  = "auto"            # "forced" | "required" | "auto"
+# max_reasks   = 2
+# strict_tool  = false
 
 [dashboard]
 # Scoring knobs used when the dashboard is refreshed after a run.

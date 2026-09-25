@@ -90,6 +90,8 @@ class Move:
     # agent produced them; None for scripted policies.
     raw_response: str | None = None
     reasoning: str | None = None
+    # The upstream provider that served this model call (OpenRouter's `provider`).
+    provider: str | None = None
     # Number of corrective re-asks the LLM agent needed this turn to produce a
     # usable move (0 = got it on the first call). Recorded for audit and to detect
     # a model that only complies under pressure; scripted policies leave it 0.

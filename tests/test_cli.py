@@ -142,11 +142,12 @@ def test_unknown_scenario_is_rejected(tmp_path: Path) -> None:
 
 
 def _trace_set(path: Path) -> set[str]:
-    """Traces as a set of JSON strings, minus wall-clock latency (always varies)."""
+    """Traces as a set of JSON strings, minus wall-clock fields (latency, run start)."""
     out = set()
     for line in path.open():
         d = json.loads(line)
         d.pop("latency_s", None)
+        d.get("provenance", {}).pop("started_at", None)
         out.add(json.dumps(d, sort_keys=True))
     return out
 

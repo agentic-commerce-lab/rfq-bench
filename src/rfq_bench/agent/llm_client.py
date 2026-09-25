@@ -50,6 +50,8 @@ class LLMResponse:
     # its error body (e.g. OpenRouter's ``{"error": {...}}``) or the finish_reason.
     # Marks an infrastructure failure, not a model one.
     provider_error: str | None = None
+    # The upstream provider that served the call (OpenRouter's ``provider`` field).
+    provider: str | None = None
 
 
 class LLMClient:
@@ -176,6 +178,7 @@ class LLMClient:
                 content=raw_args,
                 reasoning=_extract_reasoning(message),
                 finish_reason=getattr(choice, "finish_reason", None),
+                provider=_extract_provider(resp),
             )
         raise RuntimeError("unreachable")  # pragma: no cover
 
@@ -206,6 +209,16 @@ def _is_tool_choice_rejection(exc: BaseException) -> bool:
     Non-transient and identical for every call, so fail fast with a clear fix.
     """
     return getattr(exc, "status_code", None) == 400 and "tool_choice" in str(exc)
+
+
+def _extract_provider(resp: Any) -> str | None:
+    """The upstream provider that served the call (OpenRouter's top-level ``provider``)."""
+    val = getattr(resp, "provider", None)
+    if val is None:
+        extra = getattr(resp, "model_extra", None)
+        if isinstance(extra, dict):
+            val = extra.get("provider")
+    return val if isinstance(val, str) and val else None
 
 
 def _extract_cached_tokens(usage: Any) -> int:

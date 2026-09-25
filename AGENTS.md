@@ -207,8 +207,9 @@ Model these as pydantic types. Keep everything the LLM must **not** see marked p
 - **Outcome / Agreement:** the accepted contract terms; scorable by the utility engine.
 - **Trace:** transcript, all offers, final agreement (or no-deal), realized utilities,
   strategy id, opponent id, role, first-speaker order, seed, full model config, latency,
-  token cost, and validity flags. The trace is **append-only and immutable** once a run
-  completes.
+  token cost, validity flags, and provenance (code version, run start, fingerprints of
+  every model-visible text; serving provider per LLM step). The trace is
+  **append-only and immutable** once a run completes.
 
 Scenario dataset shape (`data/scenarios/*.json` or `.csv`) defines: products, buyer
 value, seller cost, BATNAs, issue weights, constraints, and deadlines.
@@ -298,6 +299,11 @@ compute `q_i,e`, then `S_s`, then `Δ_s` vs. control, with scenario-clustered CI
 - **Seed everything** the benchmark controls (opponent policy, scenario sampling, any
   tie-breaking). Forward the model seed when the endpoint supports it; record it either
   way.
+- **Provenance.** Every trace records `provenance` (git commit, run start, sha256
+  fingerprints of each model-visible text: system prompt per role, instruction per
+  arm, move tool schema) and each LLM step its serving `provider`. Compare/duel warn
+  when fingerprints differ. Pin decoding in the config's `[llm]` table, not `.env`.
+  Keepable runs are archived under `data/runs/` (results/ is git-ignored).
 - **Traces are immutable.** Writing a trace is append-only; never mutate `results/`
   outputs. Re-scoring reads traces, it does not re-run them.
 - **No leakage:** private economics (values, costs, BATNAs, margins, approval limits)

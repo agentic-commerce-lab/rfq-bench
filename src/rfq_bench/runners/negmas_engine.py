@@ -49,6 +49,7 @@ class Event:
     error_reason: str | None = None
     raw_response: str | None = None
     reasoning: str | None = None
+    provider: str | None = None
     # Corrective re-asks the LLM agent needed to produce this move (0 = first try).
     reask_count: int = 0
     # A2A message channel: the public message sent with this move (full text).
@@ -75,6 +76,7 @@ def _event(
         error_reason=move.error_reason,
         raw_response=move.raw_response,
         reasoning=move.reasoning,
+        provider=move.provider,
         reask_count=move.reask_count,
         message=move.message,
         message_truncated=move.message_truncated,

@@ -194,3 +194,32 @@ def test_display_names_are_reader_friendly() -> None:
     assert _short("openai/gpt-6-astra-pro") == "GPT-6 Astra Pro"
     assert _short("openai/gpt-5.6-terra") == "GPT-5.6 Terra"
     assert _provider("openai/gpt-6-sol") == "OpenAI" and _provider("anthropic/x") == "Anthropic"
+
+
+def test_duel_warns_when_prompts_change_and_lists_providers(scenarios) -> None:
+    from rfq_bench.report.duel import model_providers
+
+    ts = _duel_traces(scenarios, [(A, B), (B, A)])
+    steps = [
+        Step(round=0, party="buyer", action="offer", outcome={"price": 100}, provider="Azure"),
+        Step(round=0, party="seller", action="accept", outcome={"price": 100}, provider="OpenAI"),
+    ]
+    ts = [
+        t.model_copy(update={"steps": steps, "provenance": {"system_prompt_seller": str(i % 2)}})
+        for i, t in enumerate(ts)
+    ]
+    d = build_duel(ts, scenarios)
+    assert any("seller system prompt changed" in w for w in d.warnings)
+    prov = model_providers(ts)
+    # A sells in (A,B) episodes and buys in (B,A) episodes.
+    assert prov[A] == {"OpenAI": 3, "Azure": 3} or prov[A] == {"Azure": 3, "OpenAI": 3}
+
+
+def test_compare_warns_on_prompt_difference(single_issue_scenario) -> None:
+    from rfq_bench.report.compare import condition_warnings
+
+    a = _trace("s0", A, B, 0.5, 0.5).model_copy(update={"provenance": {"tool_schema": "1"}})
+    b = a.model_copy(update={"provenance": {"tool_schema": "2"}})
+    assert "move tool schema differs between the runs" in condition_warnings([a], [b])
+    old = a.model_copy(update={"provenance": {}})
+    assert any("no provenance" in w for w in condition_warnings([a], [old]))

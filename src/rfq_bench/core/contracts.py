@@ -171,6 +171,9 @@ class Step(BaseModel):
     # produced them. These are for human audit only — never fed back to any model.
     raw_response: str | None = None
     reasoning: str | None = None
+    # The upstream provider that served the model call for this move, when the
+    # endpoint reports it (OpenRouter routes one model id to several providers).
+    provider: str | None = None
     # Corrective re-asks the LLM agent needed to elicit this move (0 = first try).
     reask_count: int = 0
     # A2A only: the public message sent with this move, in full (the other party
@@ -242,3 +245,9 @@ class Trace(BaseModel):
     error_reason: str | None = None
     # Separate-track validity/safety flags (never folded into the score).
     validity: dict[str, bool] = Field(default_factory=dict)
+    # What produced this trace, for reproducibility: ``code_version`` (git commit,
+    # "+dirty" with uncommitted changes), ``started_at`` (UTC, run start), and
+    # sha256 fingerprints of every model-visible text: ``system_prompt_<role>``,
+    # ``instruction_<role>`` (strategy/persona guidance) and ``tool_schema``.
+    # Empty on traces written before this field existed.
+    provenance: dict[str, str] = Field(default_factory=dict)

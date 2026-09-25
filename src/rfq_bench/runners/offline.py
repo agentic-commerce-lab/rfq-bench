@@ -69,6 +69,7 @@ def run_episode(
     opponent_policy: NegotiationPolicy | None = None,
     llm_config: LLMConfig | None = None,
     max_rounds: int | None = None,
+    provenance: dict[str, str] | None = None,
 ) -> Trace:
     """Run one SAO episode on a NegMAS mechanism and return an immutable trace.
 
@@ -161,6 +162,7 @@ def run_episode(
             error_reason=e.error_reason,
             raw_response=e.raw_response,
             reasoning=e.reasoning,
+            provider=e.provider,
             reask_count=e.reask_count,
             message=e.message,
             message_truncated=e.message_truncated,
@@ -212,6 +214,7 @@ def run_episode(
         prompt_tokens_by_role=prompt_tokens_by_role,
         cached_tokens_by_role=cached_tokens_by_role,
         deadline=deadline,
+        provenance=provenance,
     )
 
 
@@ -231,6 +234,7 @@ def _finalize(
     prompt_tokens_by_role: dict[Role, int] | None = None,
     cached_tokens_by_role: dict[Role, int] | None = None,
     deadline: int | None = None,
+    provenance: dict[str, str] | None = None,
 ) -> Trace:
     scenario = spec.scenario
     zopa = compute_zopa(scenario)
@@ -291,6 +295,7 @@ def _finalize(
         errored=errored,
         error_reason=error_reason,
         validity=validity,
+        provenance=dict(provenance or {}),
     )
 
 

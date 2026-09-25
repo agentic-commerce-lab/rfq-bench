@@ -225,6 +225,7 @@ class LLMNegotiator:
             )
         move.raw_response = resp.content or None
         move.reasoning = resp.reasoning
+        move.provider = resp.provider
         if move.error:
             # Distinguish an infrastructure failure (provider returned no
             # completion, already retried by the client) and a harness-induced

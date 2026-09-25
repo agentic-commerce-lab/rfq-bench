@@ -47,10 +47,41 @@ agent       = "llm"
 concurrency = 8            # stagger auto-ramps parallel starts (--stagger to tune)
 out         = "results/offline_v0.jsonl"
 
+[llm]
+tool_choice = "auto"       # decoding condition, overrides .env for this run
+max_tokens  = 4096
+
 [dashboard]
 control = "control"        # scoring knobs for the post-run dashboard refresh
 n_boot  = 2000
 ```
+
+The `[llm]` table (`temperature`, `max_tokens`, `seed`, `tool_choice`, `max_reasks`,
+`strict_tool`) pins the decoding condition in the config instead of `.env`. The run
+plan prints the effective values and marks any that still come from the environment
+with `(.env)`. The endpoint, API key and model stay in the environment.
+
+### Repeating a run later
+
+A run is reproducible from its config plus the committed code, and checkable from its
+traces:
+
+1. **Pin the condition in the config.** Every duel config sets `[llm]`, so the result
+   does not depend on whoever's `.env`.
+2. **Every trace records its provenance** (`Trace.provenance`): the git commit
+   (`+dirty` if there were uncommitted changes), the run start time, and fingerprints of
+   everything the model saw (system prompt per role, strategy/persona instruction, move
+   tool schema). Each move also records the upstream `provider` that served it
+   (OpenRouter routes one model id to several providers).
+3. **Rerun into a new file and compare.** `rfq-bench compare old.jsonl new.jsonl` and
+   the duel report warn when a prompt, instruction or the tool schema changed between
+   or within runs, or when older traces have no provenance to check.
+4. **Keep the traces.** `results/` is git-ignored; runs worth keeping are archived in
+   `data/runs/<date>_<name>/` with a manifest (see `data/runs/README.md`).
+
+Model ids are pinned, but a provider can still update a model behind the same id, and
+temperature 0 is not fully deterministic. A repeat run of an unchanged setup shows how
+far results move between runs; treat differences smaller than that as noise.
 
 ## Interactive dashboard
 
@@ -531,9 +562,9 @@ uv run rfq-bench run --agent duel --models deepseek/deepseek-v4-flash,anthropic/
   A vs A and B vs B (self-play), at 2× the cost.
 - **The model is the treatment.** Every cell (scenario × strategy × persona × first
   speaker) is played once per pairing; strategy and persona default to `control` /
-  `neutral`. Decoding config, system prompts and `RFQ_BENCH_TOOL_CHOICE` are shared,
-  so the model is the only difference (use `auto` if either model rejects forced
-  tool calls).
+  `neutral`. Decoding config, system prompts and `tool_choice` (pinned in the
+  config's `[llm]` table) are shared, so the model is the only difference (use `auto`
+  if either model rejects forced tool calls).
 - **Model score.** Per cell, each model's score is the mean of its seller q and its
   buyer q *against the other model*: `S_A = (s[A→B] + b[B→A]) / 2`. Each pairing has
   one seller and one buyer, so any role advantage in the scenarios cancels, and each

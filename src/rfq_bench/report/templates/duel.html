@@ -326,7 +326,13 @@ const clearWin = r => r.lo!=null && (r.lo > 0 || r.hi < 0);
 /* header */
 document.title = `Duel · ${MA.name} vs ${MB.name}`;
 $("#title").innerHTML = `Model duel: ${nm(MA.id)} vs ${nm(MB.id)}`;
-$("#metaline").textContent = [DATA.generated ? `generated ${DATA.generated}` : "", DATA.source].filter(Boolean).join(" · ");
+const RUN = DATA.run || {};
+$("#metaline").textContent = [
+  RUN.started && RUN.started.length ? `run ${RUN.started[0].slice(0, 10)}` : "",
+  RUN.code_versions && RUN.code_versions.length ? `code ${RUN.code_versions.join(", ")}` : "",
+  DATA.generated ? `page built ${DATA.generated}` : "",
+  DATA.source,
+].filter(Boolean).join(" · ");
 $("#footer").textContent = `rfq-bench duel · ${DATA.source} · scored offline from immutable traces · charts by uPlot (vendored, MIT)`;
 
 /* 1 · result */
@@ -461,6 +467,8 @@ forest($("#byScenario"), DATA.by_scenario);
         <div class="k">moves</div><div class="v">${n(u.calls)}</div>
         <div class="k">tokens per move</div><div class="v">${n(u.tokens_per_call)}</div>
         <div class="k">cost per move</div><div class="v">${usd(u.cost_per_call, 4)}</div>
+        ${(() => { const p = (DATA.providers || {})[u.id]; return p && Object.keys(p).length
+          ? `<div class="k">served by</div><div class="v">${Object.keys(p).map(esc).join(", ")}</div>` : ""; })()}
       </div></div>`;
   }).join("");
   $("#costHint").textContent = `API cost over all negotiations each model took part in. Total ${usd(tot, 2)}.`;

@@ -41,6 +41,18 @@ out           = "results/duel_price.jsonl"
 dashboard     = true
 dashboard_out = "results/duel_price_dashboard.html"
 
+[llm]
+# The decoding condition, pinned so the run does not depend on .env. These are the
+# values the 2026-09-24 duels ran with (recorded in their traces). tool_choice
+# must stay "auto": Claude with extended thinking rejects forced tool calls, and
+# both models must use the same protocol.
+temperature = 0.0
+max_tokens  = 4096
+seed        = 7
+tool_choice = "auto"
+max_reasks  = 2
+strict_tool = false
+
 [dashboard]
 n_boot = 2000
 seed   = 0
