@@ -1,0 +1,48 @@
+# Model duel — GPT-6 Sol vs Claude Opus 5.5 on the price-v1 suite.
+#
+# Run the smoke test first:  uv run rfq-bench run --config configs/duel-sol-opus-smoke.toml
+# Then:       uv run rfq-bench run --config configs/duel-sol-opus.toml
+# Score with: uv run rfq-bench report    --config configs/duel-sol-opus.toml
+#             uv run rfq-bench dashboard --config configs/duel-sol-opus.toml
+#
+# The MODEL is the treatment; strategy/persona stay at control/neutral.
+# pairings = "full": Sol→Opus, Opus→Sol (the overall model score, where role
+# advantage cancels) plus Sol→Sol and Opus→Opus self-play, which separate
+# skill as seller from skill as buyer.
+#
+# Matrix: 8 scenarios × control × neutral × 2 first speakers × 1 seed × 4 pairings
+#       = 64 episodes. The two no-ZOPA scenarios feed walk✓ only, so the score's CI
+# is clustered over 6 scenarios — expect it to be wide; only a clear gap will show.
+# One seed: requests use RFQ_BENCH_SEED at temperature 0, so extra seeds would
+# repeat the same requests rather than add independent samples.
+#
+# Needs RFQ_BENCH_TOOL_CHOICE=auto in .env (Opus rejects forced tool calls); both
+# models then use the same protocol. Model ids are pinned (not the ~latest alias).
+# Check the cost/time preview against your remaining credit before confirming.
+
+[run]
+agent       = "duel"
+data        = "data/scenarios_price"
+models      = ["openai/gpt-6-sol", "anthropic/claude-opus-5.5"]
+pairings    = "full"
+
+scenarios   = [
+  "price_wide_sym", "price_narrow", "price_skew_low", "price_skew_high",
+  "price_odd", "price_contract", "price_nozopa_gap", "price_nozopa_near",
+]
+strategies     = ["control"]
+personas       = ["neutral"]
+first_speakers = ["buyer", "seller"]     # both opening orders, balanced
+seeds          = [0]
+
+concurrency = 16
+retries     = 2
+overwrite   = true                       # one clean result per run; copy the file to keep an old one
+
+out           = "results/duel_sol_opus.jsonl"
+dashboard     = true
+dashboard_out = "results/duel_sol_opus_dashboard.html"
+
+[dashboard]
+n_boot = 2000
+seed   = 0

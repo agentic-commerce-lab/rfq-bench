@@ -33,6 +33,8 @@ class RunConfig(BaseModel):
     strategies: list[str] | None = None
     opponents: list[str] | None = None
     personas: list[str] | None = None
+    models: list[str] | None = None  # --agent duel: the two models
+    pairings: str | None = None  # --agent duel: "cross" | "full"
     seeds: list[int] | None = None
     agent: str | None = None
     roles: list[str] | None = None

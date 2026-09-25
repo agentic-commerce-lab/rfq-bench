@@ -125,6 +125,32 @@ def estimate_run_cost(
     )
 
 
+def split_estimate(parts: list[CostEstimate | None]) -> CostEstimate | None:
+    """Combine per-model estimates for a duel, where each model makes half the calls."""
+    ests = [e for e in parts if e is not None]
+    if len(ests) != len(parts) or not ests:
+        return None
+    calls = ests[0].calls_max
+    per_call = (
+        None
+        if any(e.usd_per_call is None for e in ests)
+        else sum(e.usd_per_call or 0.0 for e in ests) / len(ests)
+    )
+    worst = (
+        None
+        if any(e.usd_per_call_worst is None for e in ests)
+        else sum(e.usd_per_call_worst or 0.0 for e in ests) / len(ests)
+    )
+    return CostEstimate(
+        model=" + ".join(e.model for e in ests),
+        calls_max=calls,
+        usd_per_call=per_call,
+        usd_per_call_worst=worst,
+        basis="half the calls per model — " + "; ".join(f"{e.model}: {e.basis}" for e in ests),
+        credit_remaining=ests[0].credit_remaining,
+    )
+
+
 def _deadline(scenario: Scenario, max_rounds: int | None) -> int:
     # Mirrors run_episode: the cap never extends beyond the scenario's own deadline.
     d = scenario.deadline_rounds
@@ -160,10 +186,13 @@ def history_rate(model: str, results_dir: Path) -> tuple[float, int, tuple[str, 
                     trace = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if (trace.get("llm_config") or {}).get("model") != model:
-                    continue
+                default_model = (trace.get("llm_config") or {}).get("model")
+                # Duel traces run a different model per side.
+                role_models = trace.get("models_by_role") or {}
                 parties = [s.get("party") for s in trace.get("steps") or []]
                 for role, cost in (trace.get("cost_usd_by_role") or {}).items():
+                    if role_models.get(role, default_model) != model:
+                        continue
                     n = parties.count(role)
                     if n and cost is not None:
                         total += float(cost)

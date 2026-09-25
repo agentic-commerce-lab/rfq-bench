@@ -8,6 +8,7 @@ outside NegMAS, on the returned trace.
 
 from __future__ import annotations
 
+import dataclasses
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -56,6 +57,9 @@ class EpisodeSpec:
     seed: int
     mode: str = "offline"
     persona: str | None = None
+    # Duel mode: which model plays each side (None outside duel mode).
+    seller_model: str | None = None
+    buyer_model: str | None = None
 
 
 def run_episode(
@@ -273,7 +277,12 @@ def _finalize(
         latency_s=latency_s,
         token_cost=token_cost,
         cost_usd=cost_usd,
-        mode="a2a" if spec.mode == "a2a" else "offline",
+        mode="duel" if spec.mode == "duel" else "a2a" if spec.mode == "a2a" else "offline",
+        models_by_role=(
+            {"seller": spec.seller_model, "buyer": spec.buyer_model}
+            if spec.seller_model is not None and spec.buyer_model is not None
+            else {}
+        ),
         persona=spec.persona,
         token_cost_by_role=token_cost_by_role or {},
         cost_usd_by_role=cost_usd_by_role or {},
@@ -319,6 +328,54 @@ def build_matrix(
                                 first_speaker=first,
                                 seed=seed,
                             )
+
+
+def duel_pairings(models: tuple[str, str], pairings: str) -> list[tuple[str, str]]:
+    """(seller model, buyer model) pairs for a duel.
+
+    ``cross``: A sells to B and B sells to A — enough for the overall model contrast
+    (each model's value captured across both roles; role advantages cancel).
+    ``full``: plus both self-play pairs, which separate seller from buyer skill.
+    """
+    a, b = models
+    if a == b:
+        raise ValueError("a duel needs two different models")
+    cross = [(a, b), (b, a)]
+    if pairings == "cross":
+        return cross
+    if pairings == "full":
+        return cross + [(a, a), (b, b)]
+    raise ValueError(f"pairings must be 'cross' or 'full', got {pairings!r}")
+
+
+def build_duel_matrix(
+    scenarios: list[Scenario],
+    *,
+    models: tuple[str, str],
+    pairings: str = "cross",
+    personas: list[str],
+    strategies: list[str],
+    seeds: list[int],
+    first_speakers: tuple[Role, ...] = ("buyer", "seller"),
+) -> Iterator[EpisodeSpec]:
+    """Expand the model duel: every A2A cell once per (seller model, buyer model) pair.
+
+    The **model** is the treatment; strategy and persona stay fixed prompt steers
+    (default ``control`` / ``neutral``), so the same cell is played by each pairing
+    and the per-cell contrast isolates the models. Roles are pinned per pairing.
+    """
+    pairs = duel_pairings(models, pairings)
+    for spec in build_a2a_matrix(
+        scenarios,
+        personas=personas,
+        strategies=strategies,
+        seeds=seeds,
+        first_speakers=first_speakers,
+    ):
+        for seller_model, buyer_model in pairs:
+            yield dataclasses.replace(
+                spec, mode="duel", seller_model=seller_model, buyer_model=buyer_model
+            )
 
 
 def build_a2a_matrix(

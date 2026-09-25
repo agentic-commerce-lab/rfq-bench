@@ -93,7 +93,7 @@ class LLMClient:
                 {"role": "user", "content": user},
             ],
             "tools": [tool],
-            "tool_choice": {"type": "function", "function": {"name": tool_name}},
+            "tool_choice": _tool_choice(self._settings.tool_choice, tool_name),
         }
         if self._settings.seed is not None:
             kwargs["seed"] = self._settings.seed
@@ -114,6 +114,13 @@ class LLMClient:
             try:
                 resp = client.chat.completions.create(**kwargs)
             except Exception as exc:
+                if _is_tool_choice_rejection(exc):
+                    raise RuntimeError(
+                        f"model {self._settings.model!r} rejects tool_choice="
+                        f"{self._settings.tool_choice!r}; set RFQ_BENCH_TOOL_CHOICE=auto "
+                        f"(a new, versioned condition — it is recorded in the trace). "
+                        f"Provider said: {exc}"
+                    ) from exc
                 if last or not _is_transient_exc(exc):
                     raise  # exhausted or non-transient: the episode runner handles it
                 self._backoff(attempt, attempts, f"{type(exc).__name__}: {exc}")
@@ -182,6 +189,23 @@ class LLMClient:
             delay,
         )
         self._sleep(delay)
+
+
+def _tool_choice(mode: str, tool_name: str) -> Any:
+    """The ``tool_choice`` request value for the configured mode."""
+    if mode == "forced":
+        return {"type": "function", "function": {"name": tool_name}}
+    return mode  # "required" | "auto"
+
+
+def _is_tool_choice_rejection(exc: BaseException) -> bool:
+    """A 400 saying the model doesn't support the requested tool_choice.
+
+    Claude with extended thinking rejects forced/any tool_choice; OpenRouter relays
+    it as ``tool_choice: type "tool" and "any" are not supported for this model``.
+    Non-transient and identical for every call, so fail fast with a clear fix.
+    """
+    return getattr(exc, "status_code", None) == 400 and "tool_choice" in str(exc)
 
 
 def _extract_cached_tokens(usage: Any) -> int:

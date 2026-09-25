@@ -7,6 +7,8 @@ The resolved values are snapshotted into every trace (see ``to_llm_config``).
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -47,6 +49,15 @@ class AgentSettings(BaseSettings):
     # legality is already guaranteed by the negotiator's snap-to-grid. Turn on for
     # providers that support strict and benefit from it.
     strict_tool: bool = Field(default=False, alias="RFQ_BENCH_STRICT_TOOL")
+    # How the move tool is requested. "forced" names the function in tool_choice
+    # (the default); "required" asks for any tool call; "auto" lets the model
+    # decide. Some models reject forced/required tool_choice (e.g. Claude with
+    # extended thinking: 'tool_choice: type "tool" and "any" are not supported'),
+    # so use "auto" there — a reply without a tool call is re-asked as usual.
+    # Recorded in the trace's LLMConfig: changing it is a new condition.
+    tool_choice: Literal["forced", "required", "auto"] = Field(
+        default="forced", alias="RFQ_BENCH_TOOL_CHOICE"
+    )
     # System-prompt overrides (markdown files). A general file applies to both
     # sides; the per-role files win for that role. Unset -> auto-discover
     # ./prompts/system[_<role>].md, else the packaged default. See agent.prompts.
@@ -72,4 +83,5 @@ class AgentSettings(BaseSettings):
             temperature=self.temperature,
             max_tokens=self.max_tokens,
             seed=self.seed,
+            tool_choice=self.tool_choice,
         )

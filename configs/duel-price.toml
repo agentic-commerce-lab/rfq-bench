@@ -1,0 +1,46 @@
+# Model duel — two models negotiate against each other on the price-v1 suite.
+#
+# Run with:   uv run rfq-bench run --config configs/duel-price.toml
+# Score with: uv run rfq-bench report    --config configs/duel-price.toml
+#             uv run rfq-bench dashboard --config configs/duel-price.toml
+#
+# The MODEL is the treatment. Every cell (scenario × strategy × persona × first
+# speaker) is played once per pairing of (seller model, buyer model):
+#   cross: A sells to B, B sells to A          -> overall model score (role advantage cancels)
+#   full : + A vs A and B vs B (self-play)     -> also separates seller from buyer skill (2x cost)
+# Strategy/persona stay at their baselines (control / neutral) so only the model varies.
+#
+# Everything except the model is shared: decoding config, system prompts, and
+# RFQ_BENCH_TOOL_CHOICE from .env. Use `auto` when either model rejects forced tool
+# calls (e.g. Claude with extended thinking) — both models then use the same protocol.
+#
+# Matrix: 8 scenarios × 1 strategy × 1 persona × 2 first speakers × 1 seed × 2 pairings
+#       = 32 episodes (64 with pairings = "full"). The two no-ZOPA scenarios are not
+# scored (walk✓ only), so the CI is clustered over 6 scenarios: expect it to be wide.
+
+[run]
+agent       = "duel"
+data        = "data/scenarios_price"
+models      = ["deepseek/deepseek-v4-flash", "anthropic/claude-opus-5.5"]
+pairings    = "cross"
+
+scenarios   = [
+  "price_wide_sym", "price_narrow", "price_skew_low", "price_skew_high",
+  "price_odd", "price_contract", "price_nozopa_gap", "price_nozopa_near",
+]
+strategies     = ["control"]
+personas       = ["neutral"]
+first_speakers = ["buyer", "seller"]     # both orders: who opens is balanced out
+seeds          = [0]
+
+concurrency = 16
+retries     = 2
+overwrite   = false                      # append; the duel report matches cells across pairings
+
+out           = "results/duel_price.jsonl"
+dashboard     = true
+dashboard_out = "results/duel_price_dashboard.html"
+
+[dashboard]
+n_boot = 2000
+seed   = 0

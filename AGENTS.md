@@ -76,8 +76,8 @@ Two milestones are in scope. Do not build beyond them without being asked.
   `LLMNegotiator`, the seller strategies, the pure scorer, and the report/dashboard
   unchanged. The buyer persona is prompt-level disposition only (fixed economics), so
   it touches no frozen offline dimension and the v0.1 offline suite stays immutable.
-  See README "A2A self-play". Cross-play (swapping which model plays which role) and
-  additional model families remain out of scope.
+  See README "A2A self-play". Cross-play is the separate `--agent duel` condition
+  (below); additional model families remain out of scope.
 
 - **Laya decision agent (implemented).** `--agent laya`: a local, non-generative
   decision model (Laya) as the tested agent, over loopback HTTP to a local server
@@ -90,8 +90,27 @@ Two milestones are in scope. Do not build beyond them without being asked.
   propose" invites anchoring — a measurement. Concept and eval plan (incl. the deferred
   cascade experiment) in `docs/laya-agent-concept.md`. The offline suite stays immutable.
 
+- **Model duel (implemented).** `--agent duel --models A,B`: two models negotiate
+  against each other in both roles (`cross`: A→B and B→A; `full`: plus both
+  self-play pairs). The **model** is the treatment; strategy/persona held at
+  `control`/`neutral`, decoding/prompts/tool_choice shared. A **new versioned
+  condition** (`mode = "duel"`, own `results/duel_v0.jsonl`, per-side model in
+  `Trace.models_by_role`). Scored by `report/duel.py`: per cell, a model's score is
+  the mean of its seller q and buyer q against the other model (role advantage
+  cancels), Δ with scenario-clustered CI; role skills with `full`. Reuses the SAO
+  engine, `LLMNegotiator`, scorer, and compare template. This is the "cross-play"
+  previously listed as out of scope; additional model families remain out of scope.
+
+- **Cross-run comparison (implemented).** `rfq-bench compare A.jsonl B.jsonl`: a
+  report over two existing trace files (e.g. the same condition with two models).
+  Pure, over persisted traces; pairs matched cells (scenario × strategy × opponent ×
+  role × first speaker), reports `S_B − S_A` with a scenario-clustered CI, and warns
+  on any non-model condition difference. It is a between-run readout, **not** the
+  within-agent strategy effect Δ_s, and never pools runs. It adds no runner, model
+  family, or condition. See README "Comparing two runs".
+
 **Out of scope now (design for, do not implement):** `ShopRunner` / Shopware quote
-adapter, A2A cross-play, the Laya cascade (`--agent cascade`) and the alternative Laya
+adapter, the Laya cascade (`--agent cascade`) and the alternative Laya
 move designs (package-choice, gates-only), threshold calibration on ground-truth labels,
 additional model families, the 500-scenario PM target. Keep contracts platform-neutral
 so these attach later without touching the core.
@@ -305,6 +324,10 @@ compute `q_i,e`, then `S_s`, then `Δ_s` vs. control, with scenario-clustered CI
   it is ~2× cost, nondeterministic, and exploratory.
 
 ---
+
+- **Model duel** scores the pair of models on one setup — not a general ranking. It
+  inherits A2A's limits (prompt-steer personas/strategies, nondeterminism, ~2× cost)
+  and, on the price suite, has only 6 scored scenarios, so CIs are wide.
 
 ## 10. Build order (checklist)
 

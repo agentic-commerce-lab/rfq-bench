@@ -1,0 +1,38 @@
+# Model duel SMOKE TEST — GPT-5.6 Terra vs Claude Opus 5.5, 4 episodes.
+#
+# Run with:   uv run rfq-bench run --config configs/duel-terra-opus-smoke.toml
+# Score with: uv run rfq-bench report --config configs/duel-terra-opus-smoke.toml
+#
+# Purpose: check the plumbing before the full duel (configs/duel-terra-opus.toml):
+# both models answer with a tool call, no errors/re-ask storms, costs look sane.
+# NOT a result — one scenario gives no CI.
+#
+# Matrix: 1 scenario × control × neutral × 2 first speakers × 1 seed × 2 pairings (cross)
+#       = 4 episodes: Terra sells to Opus and Opus sells to Terra, each opening order.
+#
+# Needs RFQ_BENCH_TOOL_CHOICE=auto in .env (Opus rejects forced tool calls); both
+# models then use the same protocol. Model ids are pinned (not the ~latest alias).
+
+[run]
+agent       = "duel"
+data        = "data/scenarios_price"
+models      = ["openai/gpt-5.6-terra", "anthropic/claude-opus-5.5"]
+pairings    = "cross"
+
+scenarios      = ["price_wide_sym"]
+strategies     = ["control"]
+personas       = ["neutral"]
+first_speakers = ["buyer", "seller"]
+seeds          = [0]
+
+concurrency = 4
+retries     = 2
+overwrite   = true                       # a smoke test is disposable: each run replaces it
+
+out           = "results/duel_terra_opus_smoke.jsonl"
+dashboard     = true
+dashboard_out = "results/duel_terra_opus_smoke_dashboard.html"
+
+[dashboard]
+n_boot = 2000
+seed   = 0

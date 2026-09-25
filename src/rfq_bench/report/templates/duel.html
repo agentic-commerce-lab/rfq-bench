@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Model duel</title>
+<style>
+/* __UPLOT_CSS__ */
+</style>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1a1d21; --muted: #6b7280;
+  --line: #e5e7eb; --line-strong: #cbd1d9; --accent: #3b5bdb; --accent-soft: #edf0fd;
+  --pos: #2f9e44; --neg: #e03131; --warn: #f08c00; --chip: #eef1f5;
+  --heat-lo: #e03131; --heat-mid: #f8f9fa; --heat-hi: #2f9e44;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.1);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14161a; --panel: #1c1f24; --ink: #e6e8 eb; --ink: #e6e8eb; --muted: #9aa2ad;
+    --line: #2b2f36; --line-strong: #3a3f47; --accent: #748ffc; --accent-soft: #232838;
+    --pos: #51cf66; --neg: #ff6b6b; --warn: #ffb84d; --chip: #24282f;
+    --heat-lo: #ff6b6b; --heat-mid: #2a2e35; --heat-hi: #51cf66;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14161a; --panel: #1c1f24; --ink: #e6e8eb; --muted: #9aa2ad;
+  --line: #2b2f36; --line-strong: #3a3f47; --accent: #748ffc; --accent-soft: #232838;
+  --pos: #51cf66; --neg: #ff6b6b; --warn: #ffb84d; --chip: #24282f;
+  --heat-lo: #ff6b6b; --heat-mid: #2a2e35; --heat-hi: #51cf66;
+  --shadow: 0 1px 2px rgba(0,0,0,.4);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
+h2 { font-size: 15px; } h3 { font-size: 13px; color: var(--muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em; }
+a { color: var(--accent); }
+.wrap { max-width: 1280px; margin: 0 auto; padding-inline: 20px; padding-block: 20px; }
+header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; }
+header.top .sub { color: var(--muted); font-size: 12.5px; }
+header.top .spacer { flex: 1; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: var(--shadow); padding: 16px; margin-top: 16px; }
+.panel > .head { display: flex; align-items: center; gap: 8px 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.panel > .head .spacer { flex: 1; min-width: 0; }
+.hint { color: var(--muted); font-size: 12px; }
+button, select { font: inherit; color: inherit; }
+.btn { background: var(--chip); border: 1px solid var(--line); border-radius: 8px;
+  padding: 5px 10px; cursor: pointer; }
+.btn:hover { border-color: var(--line-strong); }
+.btn.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.toggle button { background: var(--panel); border: 0; padding: 5px 11px; cursor: pointer; color: var(--muted); }
+.toggle button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+/* filter bar */
+.filters { display: flex; flex-wrap: wrap; gap: 14px; }
+.fgroup { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.fgroup .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--panel); cursor: pointer; font-size: 12.5px; user-select: none; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* tables */
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em;
+  cursor: default; position: sticky; top: 0; background: var(--panel); }
+th.sortable { cursor: pointer; } th.sortable:hover { color: var(--ink); }
+tbody tr.control td { font-weight: 600; }
+tbody tr.clickable { cursor: pointer; }
+tbody tr.clickable:hover { background: var(--accent-soft); }
+tbody tr.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.num { font-variant-numeric: tabular-nums; }
+.pos { color: var(--pos); } .neg { color: var(--neg); } .muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 12px; }
+.ci { color: var(--muted); font-size: 12px; }
+
+/* forest plot */
+.forest-row { display: grid; grid-template-columns: 120px 62px 1fr; align-items: center; gap: 8px;
+  padding: 3px 0; }
+.forest-row .name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+.forest-row .dval { text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+
+/* two-column layout */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+/* Grid children must be allowed to shrink below their content, or wide content
+   (charts, nowrap cells) forces the track wider than the card and overflows. */
+.cols > * { min-width: 0; }
+@media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+
+/* heatmap */
+.heat { border-collapse: separate; border-spacing: 2px; }
+.heat td.cell { text-align: center; color: #10141a; font-weight: 600; border-radius: 6px;
+  cursor: pointer; min-width: 54px; font-variant-numeric: tabular-nums; }
+.heat td.cell.dim { opacity: .28; }
+.heat td.cell.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
+.heat th { position: static; text-transform: none; letter-spacing: 0; font-size: 12px; }
+.heat td.rowhead { text-align: right; color: var(--ink); font-weight: 600; font-size: 12.5px; }
+
+/* episode list scroll */
+.scroll { max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.scroll table { border-collapse: separate; border-spacing: 0; }
+
+/* __REPLAY_CSS__ */
+
+/* ---------- duel page ---------- */
+:root { --ma: #0c8599; --mb: #7048e8; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ma: #3bc9db; --mb: #9775fa; } }
+:root[data-theme="dark"] { --ma: #3bc9db; --mb: #9775fa; }
+.wrap { max-width: 1180px; padding-inline: 16px; }
+h1 { font-size: 21px; }
+.ma { color: var(--ma); } .mb { color: var(--mb); }
+nav.pages { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); margin: 12px -16px 0; padding: 8px 16px;
+  display: flex; gap: 6px; overflow-x: auto; }
+nav.pages a { text-decoration: none; color: var(--muted); font-size: 12.5px; padding: 4px 10px; border-radius: 999px;
+  white-space: nowrap; border: 1px solid transparent; }
+nav.pages a:hover { border-color: var(--line); color: var(--ink); }
+nav.pages a.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+section.page { scroll-margin-top: 56px; margin-top: 26px; }
+.page-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 2px; }
+.page-head .no { font-size: 12px; font-weight: 700; color: var(--accent); background: var(--accent-soft);
+  border-radius: 6px; padding: 1px 7px; }
+.page-head h2 { font-size: 17px; }
+.page-head .hint { flex-basis: 100%; }
+.panel h3 { margin-bottom: 8px; }
+
+/* result */
+.contenders { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: stretch; }
+@media (max-width: 720px) { .contenders { grid-template-columns: 1fr; } .contenders .vs { display: none; } }
+.contender { border: 1px solid var(--line); border-top: 4px solid var(--ma); border-radius: 12px; padding: 14px 16px;
+  background: var(--panel); min-width: 0; position: relative; }
+.contender.b { border-top-color: var(--mb); }
+.contender.win { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pos) 55%, transparent), var(--shadow); }
+.contender .nm { font-weight: 700; font-size: 17px; overflow-wrap: anywhere; }
+.contender .id { font-family: var(--mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+.contender .big { font-size: 40px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; margin-top: 8px; }
+.contender .cap { font-size: 12px; color: var(--muted); }
+.contender .crown { position: absolute; top: 10px; right: 12px; font-size: 11px; font-weight: 700; color: var(--pos);
+  border: 1px solid var(--pos); border-radius: 999px; padding: 1px 8px; }
+.vs { align-self: center; color: var(--muted); font-weight: 700; }
+.headline { margin-top: 14px; font-size: 16px; }
+.headline b { font-variant-numeric: tabular-nums; }
+.says { margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: var(--chip); font-weight: 600; }
+.says.win { background: color-mix(in srgb, var(--pos) 14%, transparent); }
+.warn { margin-top: 10px; padding: 8px 12px; border-radius: 8px; font-size: 13px;
+  background: color-mix(in srgb, var(--warn) 16%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); }
+.note { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+
+/* forest (Δ between the two models) */
+.dforest { display: grid; grid-template-columns: minmax(90px, max-content) 1fr max-content; gap: 5px 10px; align-items: center; }
+.dforest .name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dforest .dval { text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.dforest .axis { position: relative; height: 30px; font-size: 11px; color: var(--muted); }
+.dforest .axis span { position: absolute; white-space: nowrap; }
+.dforest .axis .side { top: 0; font-weight: 600; }
+.dforest .axis .side.l { left: 0; } .dforest .axis .side.r { right: 0; }
+.dforest .axis .tick { bottom: 0; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+.dforest .axis .tick.edge-l { transform: none; } .dforest .axis .tick.edge-r { transform: translateX(-100%); }
+.track { position: relative; height: 20px; border-radius: 4px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ma) 7%, transparent) 50%, color-mix(in srgb, var(--mb) 7%, transparent) 50%); }
+.track .zero { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--line-strong); }
+.track .ci { position: absolute; top: 9px; height: 2px; border-radius: 2px; background: currentColor; opacity: .55; }
+.track .dot { position: absolute; top: 5px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: currentColor; }
+
+/* matchup matrix */
+.matrix { border-collapse: separate; border-spacing: 6px; width: auto; }
+.matrix th { text-transform: none; letter-spacing: 0; font-size: 12.5px; text-align: center; position: static; }
+.matrix td.m { text-align: center; border-radius: 10px; padding: 10px 14px; background: var(--chip); min-width: 150px; white-space: normal; }
+.matrix td.m .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.matrix td.m .s { font-size: 11.5px; color: var(--muted); }
+.matrix td.m.self { background: transparent; border: 1px dashed var(--line-strong); }
+.matrix td.rowhead { text-align: right; font-weight: 600; }
+.matrix td.empty { background: transparent; color: var(--muted); font-size: 12px; text-align: center; }
+
+.heat td.cell { color: #fff; }
+.dlegend { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.dlegend .ramp { width: 140px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--ma), var(--chip), var(--mb)); }
+.tscroll { overflow-x: auto; }
+.costcards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 720px) { .costcards { grid-template-columns: 1fr; } }
+.costcard { border: 1px solid var(--line); border-left: 4px solid var(--ma); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+.costcard.b { border-left-color: var(--mb); }
+.costcard .usd { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; margin: 4px 0 8px; }
+.costcard .share { height: 6px; border-radius: 3px; background: var(--chip); overflow: hidden; margin-bottom: 10px; }
+.costcard .share span { display: block; height: 100%; }
+.costcard .kv { font-size: 12.5px; }
+.costline { margin-top: 8px; font-size: 13px; color: var(--muted); }
+#tracks th { white-space: normal; text-transform: none; letter-spacing: 0; font-size: 12px; line-height: 1.35; min-width: 120px; }
+.chip.mu { font-size: 12px; }
+</style>
+</head>
+<body>
+<script id="payload" type="application/json">__RFQ_BENCH_DUEL__</script>
+<div class="wrap">
+  <header class="top">
+    <h1 id="title">Model duel</h1>
+    <span class="sub" id="metaline"></span>
+    <span class="spacer"></span>
+    <button class="btn" id="themeBtn" title="Toggle theme">◐ theme</button>
+  </header>
+  <nav class="pages" id="nav">
+    <a href="#p-result">1 · Result</a>
+    <a href="#p-roles">2 · Selling vs buying</a>
+    <a href="#p-breakdown">3 · By scenario</a>
+    <a href="#p-tracks">4 · Deals &amp; cost</a>
+    <a href="#p-episodes">5 · Replay</a>
+  </nav>
+
+  <section class="page" id="p-result">
+    <div class="page-head"><span class="no">1</span><h2>Result</h2>
+      <span class="hint" id="resultHint"></span></div>
+    <div class="panel">
+      <div class="contenders" id="contenders"></div>
+      <div class="headline" id="headline"></div>
+      <div id="says"></div>
+      <div id="warnings"></div>
+      <div class="note" id="note"></div>
+    </div>
+  </section>
+
+  <section class="page" id="p-roles">
+    <div class="page-head"><span class="no">2</span><h2>Selling vs buying</h2></div>
+    <div class="cols">
+      <div class="panel"><h3>Seller's score in each pairing</h3>
+        <div class="tscroll" id="matrix"></div>
+        <p class="hint" id="matrixHint"></p></div>
+      <div class="panel"><h3>Lead by role</h3>
+        <div id="roles"></div>
+        <p class="hint" id="rolesHint"></p></div>
+    </div>
+  </section>
+
+  <section class="page" id="p-breakdown">
+    <div class="page-head"><span class="no">3</span><h2>By scenario</h2></div>
+    <div class="cols">
+      <div class="panel"><h3>Lead in each price negotiation</h3><div id="byScenario"></div></div>
+      <div class="panel" id="byArmPanel"><h3 id="byArmTitle">By strategy &amp; persona</h3><div id="byArm"></div></div>
+    </div>
+    <div class="panel" id="gridPanel" hidden><h3>Strategy × persona</h3>
+      <div class="tscroll" id="grid"></div><div class="dlegend" id="gridLegend"></div></div>
+  </section>
+
+  <section class="page" id="p-tracks">
+    <div class="page-head"><span class="no">4</span><h2>Deals &amp; cost</h2>
+      <span class="hint">Not part of the score</span></div>
+    <div class="panel" id="costPanel" hidden><h3>Cost by model</h3>
+      <div class="costcards" id="costCards"></div>
+      <p class="hint" id="costHint"></p></div>
+    <div class="panel"><h3>Each pairing</h3><div class="tscroll" id="tracks"></div></div>
+  </section>
+
+  <section class="page" id="p-episodes">
+    <div class="page-head"><span class="no">5</span><h2>Replay</h2>
+      <span class="hint">Pick a negotiation to replay it move by move</span></div>
+    <div class="panel">
+      <div class="head">
+        <div class="chips" id="matchChips"></div>
+        <div class="spacer"></div>
+        <span class="hint" id="episodeCount"></span>
+        <input id="episodeSearch" class="btn" placeholder="search…" style="min-width:140px" />
+      </div>
+      <div class="scroll"><table id="episodes"><thead><tr>
+        <th>Seller → buyer</th><th>Scenario</th><th>Opens</th><th>Outcome</th>
+        <th title="share of the available gain the seller secured, 0–100">Seller score</th>
+        <th title="share of the available gain the buyer secured, 0–100">Buyer score</th><th>Moves</th><th>Checks</th>
+      </tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="panel">
+      <div class="head"><h2>Negotiation replay</h2><span class="hint" id="replayTitle">select an episode above</span></div>
+      <div id="replayBody"><div class="empty">Pick an episode to replay its round-by-round offers.</div></div>
+    </div>
+  </section>
+  <footer class="hint" style="text-align:center; margin:22px 0 8px" id="footer"></footer>
+</div>
+<script>
+/* __UPLOT_JS__ */
+</script>
+<script>
+"use strict";
+const DATA = JSON.parse(document.getElementById("payload").textContent);
+const META = DATA.meta, SCEN = DATA.scenarios, EPS = DATA.episodes;
+const GLOSS = DATA.glossary || {strategy:{}, opponent:{}, scenario:{}};
+function tipOf(kind, name){ return (kind && (GLOSS[kind]||{})[name]) || ""; }
+const $ = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+const fmt = (x, d=1) => (x==null || Number.isNaN(x)) ? "—" : x.toFixed(d);
+const signed = (x, d=1) => (x==null||Number.isNaN(x)) ? "—" : (x>=0?"+":"")+x.toFixed(d);
+const mean = a => a.length ? a.reduce((s,x)=>s+x,0)/a.length : NaN;
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let fidPlot = null; // the shared replay expects it; this page has no fidelity curve
+
+const [MA, MB] = DATA.models;
+const NAME = {[MA.id]: MA.name, [MB.id]: MB.name};
+const CLS = {[MA.id]: "ma", [MB.id]: "mb"};
+const nm = id => `<span class="${CLS[id]||""}"><b>${esc(NAME[id]||id)}</b></span>`;
+const plain = id => NAME[id] || id;
+const scn = id => (DATA.scenario_labels || {})[id] || id;
+const ciTxt = r => r.lo==null ? "no CI" : `95% CI [${signed(r.lo)}, ${signed(r.hi)}]`;
+// Δ = S(MB) − S(MA): positive favours MB, negative MA.
+const favours = d => d==null ? null : d > 0 ? MB.id : d < 0 ? MA.id : null;
+const clearWin = r => r.lo!=null && (r.lo > 0 || r.hi < 0);
+
+/* theme */
+(function(){
+  const KEY="rfqbench-theme"; let cur=null;
+  try { cur = localStorage.getItem(KEY); } catch(e){}
+  if (cur) document.documentElement.setAttribute("data-theme", cur);
+  $("#themeBtn").onclick = () => {
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+    const now = document.documentElement.getAttribute("data-theme");
+    const next = now ? (now==="dark"?"light":"dark") : (dark?"light":"dark");
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+    if (selectedEpisode) renderReplay(selectedEpisode), titleReplay(selectedEpisode);
+  };
+})();
+
+/* header */
+document.title = `Duel · ${MA.name} vs ${MB.name}`;
+$("#title").innerHTML = `Model duel: ${nm(MA.id)} vs ${nm(MB.id)}`;
+$("#metaline").textContent = [DATA.generated ? `generated ${DATA.generated}` : "", DATA.source].filter(Boolean).join(" · ");
+$("#footer").textContent = `rfq-bench duel · ${DATA.source} · scored offline from immutable traces · charts by uPlot (vendored, MIT)`;
+
+/* 1 · result */
+const O = DATA.overall;
+$("#resultHint").textContent = "Score 0–100: how much of the available gain a model secured, as buyer and as seller against the other model";
+function contender(m, score, cls){
+  const win = DATA.winner === m.id;
+  return `<div class="contender ${cls}${win?" win":""}">${win?'<span class="crown">winner</span>':""}
+    <div class="nm ${CLS[m.id]}">${esc(m.name)}</div><div class="id">${esc(m.provider || m.id)}</div>
+    <div class="big">${fmt(score)}</div><div class="cap">negotiation score</div></div>`;
+}
+$("#contenders").innerHTML = contender(MA, O.a, "a") + `<div class="vs">vs</div>` + contender(MB, O.b, "b");
+const lead = favours(O.delta), other = lead === MA.id ? MB.id : MA.id;
+$("#headline").innerHTML = lead
+  ? `${nm(lead)} scores <b>${fmt(Math.abs(O.delta))} points</b> higher than ${nm(other)}.`
+  : `${nm(MA.id)} and ${nm(MB.id)} score the same.`;
+// Lead as seen from the leader, with its 95% range.
+const leadLo = lead===MB.id ? O.lo : (O.hi==null ? null : -O.hi), leadHi = lead===MB.id ? O.hi : (O.lo==null ? null : -O.lo);
+const verdict = O.lo==null
+  ? "Too few scenarios to call a winner."
+  : DATA.winner
+  ? `Clear win for ${esc(plain(DATA.winner))}: the lead is very likely between ${fmt(leadLo,0)} and ${fmt(leadHi,0)} points.`
+  : "No clear winner: the difference could be chance.";
+$("#says").innerHTML = `<div class="says${DATA.winner?" win":""}">${verdict}</div>`;
+$("#warnings").innerHTML = DATA.warnings.map(w => `<div class="warn"><b>Warning:</b> ${esc(w)} — this confounds the comparison.</div>`).join("");
+(function(){
+  const U = DATA.usage || [], tot = U.reduce((s,u)=>s+(u.cost_usd||0),0);
+  if (U.some(u=>u.cost_usd!=null))
+    $("#note").insertAdjacentHTML("beforebegin", `<div class="costline">Cost of this test: <b>$${tot.toFixed(2)}</b> (${U.map(u=>`${nm(u.id)} $${(u.cost_usd||0).toFixed(2)}`).join(" · ")})</div>`);
+})();
+$("#note").textContent = `Based on ${DATA.n_negotiations} negotiations between the two models in ${O.scenarios} B2B price scenarios, each model as buyer and as seller.`;
+
+/* forest: Δ rows, oriented by model name */
+function forest(el, rows){
+  if (!rows.length){ el.innerHTML = `<div class="hint">No matched cells.</div>`; return; }
+  const vals = rows.flatMap(r => [r.delta, r.lo, r.hi]).filter(x => x!=null);
+  const m = Math.max(5, ...vals.map(Math.abs)) * 1.1;
+  const pos = x => ((x + m) / (2*m)) * 100;
+  const tk = Math.max(1, Math.round(m / 2 / 5) * 5); // ~2 ticks per side, multiples of 5
+  const ticks = [];
+  for (let t = -Math.floor(m / tk) * tk; t <= m; t += tk) ticks.push(t);
+  const tickHtml = ticks.map(t => {
+    const edge = pos(t) < 4 ? " edge-l" : pos(t) > 96 ? " edge-r" : "";
+    return `<span class="tick${edge}" style="left:${pos(t)}%">${t === 0 ? "0" : Math.abs(t)}</span>`;
+  }).join("");
+  let h = `<div class="dforest"><span></span><div class="axis"><span class="side l ma">← ${esc(MA.name)} better</span><span class="side r mb">${esc(MB.name)} better →</span>${tickHtml}</div><span></span>`;
+  for (const r of rows){
+    const f = favours(r.delta), c = f ? CLS[f] : "muted";
+    const strong = r.lo == null || clearWin(r); // fade only when a CI exists and includes 0
+    const bar = r.lo==null ? "" : `<span class="ci" style="left:${pos(r.lo)}%;width:${pos(r.hi)-pos(r.lo)}%"></span>`;
+    const dot = r.delta==null ? "" : `<span class="dot" style="left:${pos(r.delta)}%;${strong?"":"opacity:.55"}"></span>`;
+    const tip = `${r.name}: ${f ? plain(f)+" better by "+fmt(Math.abs(r.delta)) : "no difference"} · ${MA.name} ${fmt(r.a)} vs ${MB.name} ${fmt(r.b)} · ${ciTxt(r)} · ${r.cells} cells`;
+    h += `<span class="name" title="${esc(tip)}">${esc(r.name)}</span>
+      <div class="track ${c}" title="${esc(tip)}"><span class="zero"></span>${bar}${dot}</div>
+      <span class="dval ${c}" title="${esc(tip)}">${f ? esc(plain(f)) : "="} ${r.delta==null?"":"+"+fmt(Math.abs(r.delta))}</span>`;
+  }
+  el.innerHTML = h + "</div>";
+}
+
+/* 2 · roles & matchups */
+(function(){
+  const mm = {}; for (const x of DATA.matchups) mm[x.seller+"\u0000"+x.buyer] = x;
+  const ids = [MA.id, MB.id];
+  let h = `<table class="matrix"><thead><tr><th></th>${ids.map(b=>`<th>${nm(b)} buys</th>`).join("")}</tr></thead><tbody>`;
+  for (const s of ids){
+    h += `<tr><td class="rowhead">${nm(s)} sells</td>`;
+    for (const b of ids){
+      const x = mm[s+"\u0000"+b];
+      if (!x){ h += `<td class="m empty">not run</td>`; continue; }
+      h += `<td class="m${s===b?" self":""}"><div class="v ${CLS[s]}">${fmt(x.seller_s)}</div></td>`;
+    }
+    h += "</tr>";
+  }
+  $("#matrix").innerHTML = h + "</tbody></table>";
+  $("#matrixHint").textContent = "Higher is better for the seller. Dashed: a model negotiating against itself.";
+  if (DATA.roles.length){
+    forest($("#roles"), DATA.roles);
+    $("#rolesHint").textContent = "Points ahead, each measured against the same opponent.";
+  } else {
+    $("#roles").innerHTML = `<div class="hint">Needs each model to also negotiate against itself (pairings = "full").</div>`;
+  }
+})();
+
+/* 3 · breakdown */
+forest($("#byScenario"), DATA.by_scenario);
+(function(){
+  const blocks = [];
+  if (DATA.by_strategy.length > 1) blocks.push(["By seller strategy", DATA.by_strategy]);
+  if (DATA.by_persona.length > 1) blocks.push(["By buyer persona", DATA.by_persona]);
+  if (!blocks.length){
+    const s = DATA.by_strategy[0], p = DATA.by_persona[0];
+    // Nothing varies besides the model: give the scenario chart the full width.
+    $("#byArmPanel").remove();
+    $("#p-breakdown .cols").style.gridTemplateColumns = "1fr";
+    return;
+  }
+  $("#byArmTitle").textContent = blocks.map(b=>b[0]).join(" · ");
+  $("#byArm").innerHTML = blocks.map((b,i)=>`<div class="hint" style="margin:${i?12:0}px 0 4px">${b[0]}</div><div id="arm${i}"></div>`).join("");
+  blocks.forEach((b,i)=>forest($("#arm"+i), b[1]));
+  const strats = [...new Set(DATA.grid.map(g=>g.strategy))], pers = [...new Set(DATA.grid.map(g=>g.persona))];
+  if (strats.length > 1 && pers.length > 1){
+    $("#gridPanel").hidden = false;
+    const cell = Object.fromEntries(DATA.grid.map(g=>[g.strategy+"\u0000"+g.persona, g.delta]));
+    const hm = Math.max(5, ...DATA.grid.map(g=>Math.abs(g.delta||0)));
+    const col = d => `color-mix(in srgb, ${d>=0?"var(--mb)":"var(--ma)"} ${Math.round(Math.min(1,Math.abs(d)/hm)*100)}%, var(--chip))`;
+    let h = `<table class="heat"><thead><tr><th></th>${pers.map(p=>`<th>${esc(p)}</th>`).join("")}</tr></thead><tbody>`;
+    for (const s of strats){
+      h += `<tr><td class="rowhead">${esc(s)}</td>`;
+      for (const p of pers){ const d = cell[s+"\u0000"+p];
+        h += d==null ? "<td></td>" : `<td class="cell" style="background:${col(d)}" title="${esc(`${s} × ${p}: ${favours(d)?plain(favours(d))+" better by "+fmt(Math.abs(d)):"equal"}`)}">${favours(d)?esc(plain(favours(d)).slice(0,10)):"="} ${fmt(Math.abs(d))}</td>`; }
+      h += "</tr>";
+    }
+    $("#grid").innerHTML = h + "</tbody></table>";
+    $("#gridLegend").innerHTML = `<span class="ma">${esc(MA.name)} better</span><span class="ramp"></span><span class="mb">${esc(MB.name)} better</span>`;
+  }
+})();
+
+/* 4 · token cost by model */
+(function(){
+  const U = DATA.usage || [];
+  if (!U.length) return;
+  $("#costPanel").hidden = false;
+  const tot = U.reduce((s,u)=>s+(u.cost_usd||0),0), totTok = U.reduce((s,u)=>s+u.tokens,0);
+  const n = x => x==null ? "—" : Math.round(x).toLocaleString();
+  const usd = (x, d=4) => x==null ? "—" : "$"+x.toFixed(d);
+  $("#costCards").innerHTML = U.map(u => {
+    const share = tot ? (u.cost_usd||0)/tot : (totTok ? u.tokens/totTok : 0);
+    return `<div class="costcard ${u.id===MB.id?"b":""}"><div class="nm">${nm(u.id)}</div>
+      <div class="usd">${usd(u.cost_usd, 2)}</div>
+      <div class="share" title="${Math.round(100*share)}% of the run's ${tot?"spend":"tokens"}"><span style="width:${(100*share).toFixed(1)}%;background:var(${u.id===MB.id?"--mb":"--ma"})"></span></div>
+      <div class="kv">
+        <div class="k">moves</div><div class="v">${n(u.calls)}</div>
+        <div class="k">tokens per move</div><div class="v">${n(u.tokens_per_call)}</div>
+        <div class="k">cost per move</div><div class="v">${usd(u.cost_per_call, 4)}</div>
+      </div></div>`;
+  }).join("");
+  $("#costHint").textContent = `API cost over all negotiations each model took part in. Total ${usd(tot, 2)}.`;
+})();
+
+/* 4 · per matchup */
+(function(){
+  const S = DATA.side;
+  const f = (v, kind) => v==null ? "—" : kind==="int" ? Math.round(v).toLocaleString() : kind==="pct" ? Math.round(100*v)+"%"
+    : kind==="sec" ? v.toFixed(1)+"s" : kind==="usd" ? "$"+v.toFixed(4) : v.toFixed(1);
+  $("#tracks").innerHTML = `<table><thead><tr><th>Metric</th>${S.cols.map(c=>`<th>${nm(c.seller)} sells<br>→ ${nm(c.buyer)} buys</th>`).join("")}</tr></thead><tbody>${
+    S.rows.map(r=>`<tr><td>${esc(r.label)}</td>${r.values.map(v=>`<td class="num">${f(v, r.kind)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+})();
+
+/* 5 · episodes & replay */
+window.RFQ_PARTY_LABEL = (e, p) => {
+  const id = (e.models_by_role||{})[p];
+  return id ? `${plain(id)} (${p})` : p;
+};
+const matchKey = e => (e.models_by_role.seller||"") + "\u0000" + (e.models_by_role.buyer||"");
+const activeMatch = new Set(DATA.matchups.map(m=>m.seller+"\u0000"+m.buyer));
+let selectedEpisode = null, searchTerm = "";
+$("#matchChips").innerHTML = DATA.matchups.map(m => {
+  const k = m.seller+"\u0000"+m.buyer;
+  return `<span class="chip mu" role="button" aria-pressed="true" data-k="${esc(k)}">${esc(plain(m.seller))} → ${esc(plain(m.buyer))}</span>`;
+}).join("");
+$$("#matchChips .chip").forEach(ch => ch.onclick = () => {
+  const k = ch.dataset.k;
+  if (activeMatch.has(k)) activeMatch.delete(k); else activeMatch.add(k);
+  ch.setAttribute("aria-pressed", activeMatch.has(k) ? "true" : "false");
+  renderEpisodes();
+});
+$("#episodeSearch").oninput = ev => { searchTerm = ev.target.value.toLowerCase(); renderEpisodes(); };
+function q100(q, e){ return e.no_zopa ? '<span class="muted" title="no deal was possible: not scored">—</span>' : q==null ? '<span class="muted">n/a</span>' : fmt(100*q, 0); }
+function flags(e){
+  const v=e.validity||{}; const map=[["legal_agreement","L"],["no_batna_violation","B"],["correct_walk_away","W"]];
+  return (e.errored?'<span class="flag bad" title="errored: excluded">ERR</span>':"") +
+    map.map(([k,ch])=> k in v ? `<span class="flag ${v[k]?'ok':'bad'}" title="${k}">${v[k]?'✓':'✕'}${ch}</span>`:"").join("");
+}
+function renderEpisodes(){
+  let list = EPS.filter(e => activeMatch.has(matchKey(e)));
+  if (searchTerm) list = list.filter(e => [plain(e.models_by_role.seller), plain(e.models_by_role.buyer), scn(e.scenario_id), e.outcome_kind].join(" ").toLowerCase().includes(searchTerm));
+  list.sort((a,b) => matchKey(a).localeCompare(matchKey(b)) || a.scenario_id.localeCompare(b.scenario_id) || a.first_speaker.localeCompare(b.first_speaker));
+  $("#episodeCount").textContent = `${list.length} of ${EPS.length} episodes`;
+  const tb = $("#episodes tbody"); tb.innerHTML = "";
+  for (const e of list){
+    const tr = document.createElement("tr"); tr.className = "clickable" + (selectedEpisode===e ? " selected" : "");
+    const opener = e.models_by_role[e.first_speaker];
+    tr.innerHTML = `<td>${nm(e.models_by_role.seller)} → ${nm(e.models_by_role.buyer)}</td>
+      <td>${esc(scn(e.scenario_id))}</td><td class="muted">${esc(plain(opener))}</td>
+      <td><span class="badge ${e.outcome_kind}">${({agreement:"deal", walk_away:"walked away", no_deal:"no deal"})[e.outcome_kind] || e.outcome_kind}</span></td>
+      <td class="num">${q100(e.q, e)}</td><td class="num">${q100(e.q_buyer, e)}</td>
+      <td class="num muted">${e.rounds_to_close}</td><td>${flags(e)}</td>`;
+    tr.onclick = () => { selectedEpisode = e; renderEpisodes(); renderReplay(e); titleReplay(e);
+      $("#replayBody").scrollIntoView({behavior:"smooth", block:"nearest"}); };
+    tb.appendChild(tr);
+  }
+}
+function titleReplay(e){
+  const r = e.models_by_role;
+  $("#replayTitle").textContent = `${plain(r.seller)} sells → ${plain(r.buyer)} buys · ${scn(e.scenario_id)} · ${plain(r[e.first_speaker])} opens`;
+}
+
+/* __REPLAY_JS__ */
+
+/* nav highlight */
+(function(){
+  const links = $$("#nav a"), pages = links.map(a => $(a.getAttribute("href")));
+  const on = () => {
+    let i = 0; pages.forEach((p, j) => { if (p.getBoundingClientRect().top < 120) i = j; });
+    links.forEach((a, j) => a.classList.toggle("on", j === i));
+  };
+  addEventListener("scroll", on, {passive: true}); on();
+})();
+renderEpisodes();
+</script>
+</body>
+</html>

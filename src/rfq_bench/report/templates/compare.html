@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>rfq-bench compare</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1a1d21; --muted: #6b7280;
+  --line: #e5e7eb; --line-strong: #cbd1d9; --accent: #3b5bdb; --accent-soft: #edf0fd;
+  --pos: #2f9e44; --neg: #e03131; --warn: #f08c00; --chip: #eef1f5;
+  --heat-lo: #e03131; --heat-mid: #f8f9fa; --heat-hi: #2f9e44;
+  --run-a: #868e96; --run-b: #3b5bdb;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.1);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14161a; --panel: #1c1f24; --ink: #e6e8eb; --muted: #9aa2ad;
+    --line: #2b2f36; --line-strong: #3a3f47; --accent: #748ffc; --accent-soft: #232838;
+    --pos: #51cf66; --neg: #ff6b6b; --warn: #ffb84d; --chip: #24282f;
+    --heat-lo: #ff6b6b; --heat-mid: #2a2e35; --heat-hi: #51cf66;
+    --run-a: #9aa2ad; --run-b: #748ffc;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14161a; --panel: #1c1f24; --ink: #e6e8eb; --muted: #9aa2ad;
+  --line: #2b2f36; --line-strong: #3a3f47; --accent: #748ffc; --accent-soft: #232838;
+  --pos: #51cf66; --neg: #ff6b6b; --warn: #ffb84d; --chip: #24282f;
+  --heat-lo: #ff6b6b; --heat-mid: #2a2e35; --heat-hi: #51cf66;
+  --run-a: #9aa2ad; --run-b: #748ffc;
+  --shadow: 0 1px 2px rgba(0,0,0,.4);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+h1, h2 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
+h1 { font-size: 20px; } h2 { font-size: 15px; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 20px 16px; }
+header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+header.top .spacer { flex: 1; }
+.sub, .hint { color: var(--muted); font-size: 12.5px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: var(--shadow); padding: 16px; margin-top: 16px; min-width: 0; }
+.panel > .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 12px; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.cols > * { min-width: 0; }
+@media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+.btn { font: inherit; color: inherit; background: var(--chip); border: 1px solid var(--line);
+  border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+
+/* run identity */
+.runs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+@media (max-width: 640px) { .runs { grid-template-columns: 1fr; } }
+.run { border: 1px solid var(--line); border-left: 4px solid var(--run-a); border-radius: 10px;
+  padding: 10px 12px; background: var(--panel); min-width: 0; }
+.run.b { border-left-color: var(--run-b); }
+.run .tag { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.run .name { font-weight: 650; font-size: 15px; overflow-wrap: anywhere; }
+.run .meta { font-family: var(--mono); font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+
+/* verdict */
+.verdict { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .verdict { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stat .k { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.stat .v { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.stat .s { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.says { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--accent-soft);
+  font-weight: 600; }
+.says.pos { background: color-mix(in srgb, var(--pos) 14%, transparent); }
+.says.neg { background: color-mix(in srgb, var(--neg) 12%, transparent); }
+.warn { margin-top: 10px; padding: 8px 12px; border-radius: 8px; font-size: 13px;
+  background: color-mix(in srgb, var(--warn) 16%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); }
+.note { margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+
+/* forest */
+.forest { display: grid; grid-template-columns: minmax(80px, max-content) 1fr 58px; gap: 4px 10px; align-items: center; }
+.forest .name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.forest .dval { text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; font-weight: 600; }
+.forest .axis { font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; }
+.track { position: relative; height: 20px; }
+.track .zero { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line-strong); }
+.track .ci { position: absolute; top: 9px; height: 2px; border-radius: 2px; background: currentColor; opacity: .55; }
+.track .dot { position: absolute; top: 5px; width: 10px; height: 10px; margin-left: -5px;
+  border-radius: 50%; background: currentColor; }
+.pos { color: var(--pos); } .neg { color: var(--neg); } .muted { color: var(--muted); }
+
+/* tables */
+.tscroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.ci-txt { color: var(--muted); font-size: 12px; }
+.bars { display: inline-grid; gap: 2px; width: 90px; vertical-align: middle; }
+.bars span { display: block; height: 5px; border-radius: 3px; }
+.bars .a { background: var(--run-a); } .bars .b { background: var(--run-b); }
+
+/* heatmap */
+.heat { border-collapse: separate; border-spacing: 2px; width: auto; }
+.heat td.cell { text-align: center; color: #10141a; font-weight: 600; border-radius: 6px;
+  min-width: 56px; padding: 6px 8px; }
+.heat th { text-transform: none; letter-spacing: 0; font-size: 12px; text-align: center; }
+.heat td.rowhead { text-align: right; font-weight: 600; font-size: 12.5px; }
+.legend { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.legend .ramp { width: 140px; height: 8px; border-radius: 4px;
+  background: linear-gradient(90deg, var(--heat-lo), var(--heat-mid), var(--heat-hi)); }
+footer { color: var(--muted); font-size: 12px; margin: 20px 0 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1 id="title">Run comparison</h1>
+    <span class="sub" id="generated"></span>
+    <span class="spacer"></span>
+    <button class="btn" id="theme" type="button">Theme</button>
+  </header>
+  <div class="runs" id="runs"></div>
+
+  <section class="panel" id="verdict-panel">
+    <div class="head"><h2>Verdict</h2>
+      <span class="hint" id="verdict-hint"></span></div>
+    <div class="verdict" id="verdict"></div>
+    <div id="says"></div>
+    <div id="warnings"></div>
+    <div class="note" id="note">A between-run comparison under this fixed setup — not the benchmark's within-agent strategy effect, and not a general model ranking. In A2A runs both sides change model together.</div>
+  </section>
+
+  <section class="panel" id="role-panel" hidden><div class="head"><h2>Δ by role</h2>
+      <span class="hint">counterpart held fixed: seller skill with the same buyer, buyer skill with the same seller</span></div>
+    <div id="forest-role"></div></section>
+
+  <div class="cols">
+    <section class="panel"><div class="head"><h2>Δ by strategy</h2><span class="hint" id="strat-hint"></span></div>
+      <div id="forest-strategy"></div></section>
+    <section class="panel"><div class="head"><h2 id="opp-title">Δ by opponent</h2><span class="hint" id="opp-hint">persona in A2A runs</span></div>
+      <div id="forest-opponent"></div></section>
+  </div>
+
+  <section class="panel"><div class="head"><h2>Scores side by side</h2>
+      <span class="hint" id="scores-hint"></span></div>
+    <div class="tscroll" id="scores"></div></section>
+
+  <div class="cols">
+    <section class="panel"><div class="head"><h2>Δ by scenario</h2><span class="hint">one cluster each, so no CI</span></div>
+      <div id="forest-scenario"></div></section>
+    <section class="panel"><div class="head"><h2 id="grid-title">Δ strategy × opponent</h2><span class="hint">averaged over matched scenarios</span></div>
+      <div class="tscroll" id="heat"></div>
+      <div class="legend"><span id="lg-lo"></span><span class="ramp"></span><span id="lg-hi"></span></div></section>
+  </div>
+
+  <section class="panel"><div class="head"><h2>Separate tracks</h2>
+      <span class="hint" id="side-hint">not part of the score · episodes in cells both runs cover, incl. no-ZOPA and errored</span></div>
+    <div class="tscroll" id="side"></div></section>
+
+  <footer id="footer"></footer>
+</div>
+<script id="payload" type="application/json">__RFQ_BENCH_COMPARE__</script>
+<script>
+(function () {
+  const P = JSON.parse(document.getElementById("payload").textContent);
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const f1 = (x) => (x == null ? "—" : x.toFixed(1));
+  const sg = (x) => (x == null ? "—" : (x > 0 ? "+" : "") + x.toFixed(1));
+  const ci = (r) => (r.lo == null ? "—" : `[${sg(r.lo)}, ${sg(r.hi)}]`);
+  const tone = (r) => (r.lo != null && r.lo > 0) ? "pos" : (r.hi != null && r.hi < 0) ? "neg" : "muted";
+
+  // theme toggle (per-viewer convenience; storage may be unavailable)
+  const root = document.documentElement;
+  try { const t = localStorage.getItem("rfq-theme"); if (t) root.dataset.theme = t; } catch (e) {}
+  $("theme").onclick = () => {
+    const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+    try { localStorage.setItem("rfq-theme", root.dataset.theme); } catch (e) {}
+  };
+
+  $("generated").textContent = P.generated ? `generated ${P.generated}` : "";
+  const oppName = P.opponent_label || "opponent";
+  if (P.title) { $("title").textContent = P.title; document.title = `rfq-bench · ${P.title.toLowerCase()}`; }
+  const A = P.label_a, B = P.label_b;
+  $("verdict-hint").textContent = P.hint || `Δ = ${B} − ${A}, in points of captured value above BATNA on matched cells · 95% CI clustered by scenario`;
+  $("scores-hint").innerHTML = `${esc(A)} <span style="color:var(--run-a)">■</span> vs ${esc(B)} <span style="color:var(--run-b)">■</span> on the same matched cells`;
+  $("strat-hint").textContent = `where ${B} gains or loses against ${A}`;
+  if (P.note) $("note").textContent = P.note;
+  $("opp-title").textContent = `Δ by ${oppName}`;
+  $("grid-title").textContent = `Δ strategy × ${oppName}`;
+  if (P.kind === "duel") {
+    $("opp-hint").textContent = "buyer persona (a prompt steer, held fixed per cell)";
+    $("side-hint").textContent = `not part of the score · per pairing, seller → buyer (A = ${P.label_a}, B = ${P.label_b}) · all episodes incl. no-ZOPA and errored`;
+  }
+  $("runs").innerHTML = ["a", "b"].map((k) => `
+    <div class="run ${k}"><div class="tag">${k === "a" ? "baseline" : "compared"}</div>
+      <div class="name">${esc(P["label_" + k])}</div>
+      <div class="meta">${esc(P["models_" + k])}</div>
+      <div class="meta">${esc(P["source_" + k])}</div></div>`).join("");
+
+  const o = P.overall;
+  const stat = (k, v, s, cls) => `<div class="stat"><div class="k">${k}</div><div class="v ${cls || ""}">${v}</div><div class="s">${s}</div></div>`;
+  $("verdict").innerHTML =
+    stat(`S · ${esc(P.label_a)}`, f1(o.a), "baseline") +
+    stat(`S · ${esc(P.label_b)}`, f1(o.b), "compared") +
+    stat(`Δ ${esc(P.label_b)} − ${esc(P.label_a)}`, sg(o.delta), `95% CI ${ci(o)}`, tone(o)) +
+    stat("Matched", `${o.cells}`, `cells over ${o.scenarios} scenario${o.scenarios === 1 ? "" : "s"}`);
+  const t = tone(o);
+  $("says").innerHTML = `<div class="says ${t === "muted" ? "" : t}">${esc(P.verdict)}</div>`;
+  const warns = [...P.warnings.map((w) => `<b>Warning:</b> ${esc(w)} — this confounds the comparison.`)];
+  if (P.cells_only_a || P.cells_only_b)
+    warns.push(`Unmatched cells skipped: ${P.cells_only_a} only in ${esc(P.label_a)}, ${P.cells_only_b} only in ${esc(P.label_b)} (or unscorable in the other run).`);
+  $("warnings").innerHTML = warns.map((w) => `<div class="warn">${w}</div>`).join("");
+
+  function forest(el, rows) {
+    if (!rows.length) { el.innerHTML = `<div class="hint">No matched cells.</div>`; return; }
+    const vals = rows.flatMap((r) => [r.delta, r.lo, r.hi]).filter((x) => x != null);
+    const m = Math.max(5, ...vals.map(Math.abs)) * 1.1;
+    const pos = (x) => ((x + m) / (2 * m)) * 100;
+    let h = `<div class="forest"><span></span><div class="axis"><span>← ${esc(P.label_a)} better</span><span>0</span><span>${esc(P.label_b)} better →</span></div><span></span>`;
+    for (const r of rows) {
+      const c = tone(r);
+      const bar = r.lo == null ? "" : `<span class="ci" style="left:${pos(r.lo)}%;width:${pos(r.hi) - pos(r.lo)}%"></span>`;
+      const dot = r.delta == null ? "" : `<span class="dot" style="left:${pos(r.delta)}%"></span>`;
+      const tip = `${r.name}: Δ ${sg(r.delta)}, CI ${ci(r)}, ${r.cells} cells`;
+      h += `<span class="name" title="${esc(tip)}">${esc(r.name)}</span>
+        <div class="track ${c}" title="${esc(tip)}"><span class="zero" style="left:50%"></span>${bar}${dot}</div>
+        <span class="dval ${c}">${sg(r.delta)}</span>`;
+    }
+    el.innerHTML = h + "</div>";
+  }
+  forest($("forest-strategy"), P.by_strategy);
+  forest($("forest-opponent"), P.by_opponent);
+  forest($("forest-scenario"), P.by_scenario);
+  if (P.by_role && P.by_role.length) { $("role-panel").hidden = false; forest($("forest-role"), P.by_role); }
+
+  const bars = (r) => `<span class="bars"><span class="a" style="width:${r.a || 0}%"></span><span class="b" style="width:${r.b || 0}%"></span></span>`;
+  const table = (title, rows) => rows.map((r) => `<tr><td>${esc(r.name)}</td><td>${f1(r.a)}</td><td>${f1(r.b)}</td>
+      <td>${bars(r)}</td><td class="${tone(r)}"><b>${sg(r.delta)}</b></td><td class="ci-txt">${ci(r)}</td><td>${r.cells}</td></tr>`).join("");
+  $("scores").innerHTML = `<table><thead><tr><th>Arm</th><th>S · ${esc(P.label_a)}</th><th>S · ${esc(P.label_b)}</th><th></th><th>Δ</th><th>95% CI</th><th>Cells</th></tr></thead><tbody>
+    <tr><td><b>overall</b></td><td><b>${f1(o.a)}</b></td><td><b>${f1(o.b)}</b></td><td>${bars(o)}</td><td class="${tone(o)}"><b>${sg(o.delta)}</b></td><td class="ci-txt">${ci(o)}</td><td>${o.cells}</td></tr>
+    <tr><td colspan="7" class="hint" style="text-align:left">by strategy</td></tr>${table("strategy", P.by_strategy)}
+    <tr><td colspan="7" class="hint" style="text-align:left">by ${esc(oppName)}</td></tr>${table("opponent", P.by_opponent)}
+  </tbody></table>`;
+
+  // heatmap
+  const strats = [...new Set(P.grid.map((g) => g.strategy))];
+  const opps = [...new Set(P.grid.map((g) => g.opponent))];
+  const cell = Object.fromEntries(P.grid.map((g) => [g.strategy + "\u0000" + g.opponent, g.delta]));
+  const hm = Math.max(5, ...P.grid.map((g) => Math.abs(g.delta || 0)));
+  const color = (d) => {
+    if (d == null) return "transparent";
+    const k = Math.min(1, Math.abs(d) / hm) * 100;
+    return `color-mix(in srgb, ${d >= 0 ? "var(--heat-hi)" : "var(--heat-lo)"} ${k.toFixed(0)}%, var(--heat-mid))`;
+  };
+  $("lg-lo").textContent = `${sg(-hm)} (${P.label_a} better)`;
+  $("lg-hi").textContent = `${sg(hm)} (${P.label_b} better)`;
+  if (!strats.length) { $("heat").innerHTML = `<div class="hint">No matched cells.</div>`; }
+  else {
+    let h = `<table class="heat"><thead><tr><th></th>${opps.map((x) => `<th>${esc(x)}</th>`).join("")}</tr></thead><tbody>`;
+    for (const s of strats) {
+      h += `<tr><td class="rowhead">${esc(s)}</td>`;
+      for (const op of opps) {
+        const d = cell[s + "\u0000" + op];
+        h += d == null ? `<td></td>` : `<td class="cell" style="background:${color(d)}" title="${esc(`${s} × ${op}: Δ ${sg(d)}`)}">${sg(d)}</td>`;
+      }
+      h += "</tr>";
+    }
+    $("heat").innerHTML = h + "</tbody></table>";
+  }
+
+  const fmt = (v, kind) => {
+    if (v == null) return "—";
+    if (kind === "int") return Math.round(v).toLocaleString();
+    if (kind === "pct") return (v * 100).toFixed(0) + "%";
+    if (kind === "sec") return v.toFixed(1) + "s";
+    if (kind === "usd") return "$" + v.toFixed(4);
+    return v.toFixed(1);
+  };
+  const S = P.side;
+  $("side").innerHTML = `<table><thead><tr><th>Metric</th>${S.cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${
+    S.rows.map((r) => `<tr><td>${esc(r.label)}</td>${r.values.map((v) => `<td>${fmt(v, r.kind)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+
+  $("footer").textContent = P.source_a === P.source_b
+    ? `rfq-bench ${P.kind} · ${P.source_a} · scored offline from immutable traces`
+    : `rfq-bench ${P.kind} · ${P.label_a} = ${P.source_a} · ${P.label_b} = ${P.source_b} · scored offline from immutable traces`;
+})();
+</script>
+</body>
+</html>

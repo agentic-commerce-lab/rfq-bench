@@ -513,6 +513,80 @@ significant loss (CI well below 0) — because it walked away 80% of the time ho
 out for a deal it rarely got."* Everything lines up: low score, significant
 negative Δ, low agreement.
 
+## Model duel (`--agent duel`)
+
+Which of two models negotiates better? Self-play (`--agent a2a`) can't say: swapping
+the model changes the buyer too, and on zero-sum price scenarios a stronger buyer
+cancels a stronger seller. A duel has the two models negotiate **against each other,
+in both roles**:
+
+```bash
+uv run rfq-bench run --config configs/duel-price.toml
+# or explicitly:
+uv run rfq-bench run --agent duel --models deepseek/deepseek-v4-flash,anthropic/claude-opus-5.5 \
+  --data data/scenarios_price --pairings cross
+```
+
+- **Pairings.** `cross` (default): A sells to B *and* B sells to A. `full`: plus
+  A vs A and B vs B (self-play), at 2× the cost.
+- **The model is the treatment.** Every cell (scenario × strategy × persona × first
+  speaker) is played once per pairing; strategy and persona default to `control` /
+  `neutral`. Decoding config, system prompts and `RFQ_BENCH_TOOL_CHOICE` are shared,
+  so the model is the only difference (use `auto` if either model rejects forced
+  tool calls).
+- **Model score.** Per cell, each model's score is the mean of its seller q and its
+  buyer q *against the other model*: `S_A = (s[A→B] + b[B→A]) / 2`. Each pairing has
+  one seller and one buyer, so any role advantage in the scenarios cancels, and each
+  model always faces the other. `Δ = S_B − S_A` with a scenario-clustered 95% CI.
+- **Role skills** (`full` only): seller skill compares A and B selling to the *same*
+  buyer; buyer skill compares them buying from the *same* seller.
+- **Output.** Traces go to `results/duel_v0.jsonl` (own file, `mode = "duel"`, with
+  each side's model in `models_by_role`). `rfq-bench report` prints the duel readout
+  instead of the strategy table. The run writes a duel dashboard that reads top to
+  bottom, always by model name: **1 Result** (both scores, the winner, Δ with CI) →
+  **2 Roles & matchups** (seller score per seller → buyer matchup; skill as seller and
+  as buyer with `full`) → **3 Where it differs** (Δ per scenario, strategy, persona) →
+  **4 Other metrics** per matchup → **5 Episodes & replay** (the same round-by-round
+  replay as the main dashboard, filterable by matchup).
+
+Caveats: two models on one setup is not a general ranking; the score is value
+capture only (read agreement %, walk✓ and cost alongside); the no-ZOPA scenarios
+are excluded from the score, so the price suite has 6 scored scenarios and wide CIs.
+Personas and strategies are one-line prompt steers, as in A2A.
+
+## Comparing two runs (e.g. two models)
+
+`rfq-bench compare A.jsonl B.jsonl` scores two trace files against each other —
+typically the **same condition run with two models**:
+
+```bash
+uv run rfq-bench compare results/a2a_price.jsonl results/a2a_price_opus.jsonl \
+  --data data/scenarios_price --label-a deepseek --label-b opus
+```
+
+- **Matched cells only.** A cell is scenario × strategy × opponent × role × first
+  speaker. Only cells scorable in *both* runs are compared (seeds averaged within a
+  cell), and the skipped counts are printed — so a run that covers more strategies
+  or scenarios doesn't win or lose on coverage.
+- **Δ = S_B − S_A**, paired per cell, with a 95% CI that resamples scenarios. Read it
+  like the strategy Δ: a CI that excludes 0 names a winner; one scenario gives no CI.
+  Broken down per strategy and per opponent, so you can see *where* a model gains.
+- **Separate tracks side by side** (error rate, agreement, walk✓, Pareto, rounds,
+  latency, $/episode) on the cells both runs cover.
+- **HTML dashboard.** Also writes a self-contained, offline page (default
+  `results/compare_<label-a>_vs_<label-b>.html`; `--html-out` to choose,
+  `--no-html` to skip): verdict, Δ forest plots per strategy / opponent / scenario,
+  a strategy × opponent Δ heatmap, scores and separate tracks side by side.
+- **Condition check.** Any difference besides the model — mode, outcome-space
+  version, per-cell deadline (`--max-rounds`), temperature, max_tokens, seed,
+  `tool_choice` — is printed as a `WARNING`: it confounds the comparison. The system
+  prompt is not on the trace; keep it identical yourself.
+
+This is a **between-run** comparison, not the benchmark's within-agent strategy
+effect: it says which model captured more value above BATNA *under this fixed
+setup*, not which model is better in general. The same limits apply (a higher score
+can be opponent exploitation; A2A runs change both sides at once).
+
 ## Limitations & known drawbacks
 
 Read this before drawing conclusions. The benchmark is strong on **internal
@@ -586,7 +660,8 @@ treat A2A numbers as exploratory.
   screening the guidance text, not by the type system.
 
 **Scope (deferred, designed-for but not built):** `ShopRunner`/Shopware quote adapter,
-A2A cross-play, additional model families, the 500-scenario target.
+additional model families, the 500-scenario target. (Cross-play is built as
+`--agent duel`.)
 
 ## References
 

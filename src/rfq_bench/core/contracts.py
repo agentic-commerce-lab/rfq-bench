@@ -132,6 +132,9 @@ class LLMConfig(BaseModel):
     temperature: float
     max_tokens: int
     seed: int | None = None
+    # How the move tool was requested ("forced" | "required" | "auto"). Defaults to
+    # "forced" so traces written before this field existed stay valid and accurate.
+    tool_choice: str = "forced"
 
 
 class Step(BaseModel):
@@ -215,13 +218,19 @@ class Trace(BaseModel):
     # --- A2A self-play condition (offline traces leave these at their defaults) ---
     # "offline" = one LLM/scripted agent vs a scripted opponent (the v0.1 suite).
     # "a2a"     = LLM buyer persona vs LLM seller strategy (self-play).
-    mode: Literal["offline", "a2a"] = "offline"
+    # "duel"    = model duel: LLM seller model vs LLM buyer model, both roles swept
+    #             across two models (see ``models_by_role``).
+    mode: Literal["offline", "a2a", "duel"] = "offline"
     # The buyer persona in A2A mode; None in offline mode. ``strategy`` carries the
     # seller strategy in A2A mode, so (persona, strategy) names the cell.
     persona: str | None = None
     # Per-role token and USD spend, so both sides of an A2A episode are visible in
     # cost reporting. Offline traces record only the tested agent's role.
     token_cost_by_role: dict[Role, int] = Field(default_factory=dict)
+    # Model id per LLM side, when the sides run different models (duel mode). Empty
+    # otherwise: every LLM side then uses ``llm_config.model``. In duel mode
+    # ``llm_config`` holds the shared decoding config, with the seller's model.
+    models_by_role: dict[Role, str] = Field(default_factory=dict)
     cost_usd_by_role: dict[Role, float] = Field(default_factory=dict)
     # Prompt tokens sent per LLM side, and how many the provider served from its
     # prompt cache — the cache hit rate is cached / prompt. Empty when unreported.

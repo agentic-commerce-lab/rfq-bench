@@ -15,3 +15,8 @@ results/
 
 # OS
 .DS_Store
+
+# LinkedIn post drafts and screenshots (local only)
+docs/linkedin-post/
+docs/linkedin-assets/
+docs/linkedin-post-model-duels.md

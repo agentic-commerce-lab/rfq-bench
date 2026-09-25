@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -25,7 +26,13 @@ from rfq_bench.core.contracts import Role, Scenario, Trace
 from rfq_bench.datasets import load_scenarios
 from rfq_bench.opponents import OPPONENTS
 from rfq_bench.report import build_dashboard, build_report
-from rfq_bench.runners.offline import EpisodeSpec, build_a2a_matrix, build_matrix, run_episode
+from rfq_bench.runners.offline import (
+    EpisodeSpec,
+    build_a2a_matrix,
+    build_duel_matrix,
+    build_matrix,
+    run_episode,
+)
 from rfq_bench.store import TraceWriter, read_traces
 from rfq_bench.strategies import STRATEGIES
 
@@ -37,7 +44,9 @@ _DEFAULT_OUT = "results/offline_v0.jsonl"
 _DEFAULT_A2A_OUT = "results/a2a_v0.jsonl"
 # Laya (local decision model) writes to its own file too.
 _DEFAULT_LAYA_OUT = "results/laya_v0.jsonl"
-_AGENT_KINDS = ("scripted", "llm", "a2a", "laya")
+_DEFAULT_DUEL_OUT = "results/duel_v0.jsonl"
+_DEFAULT_DUEL_DASHBOARD = "results/duel_dashboard.html"
+_AGENT_KINDS = ("scripted", "llm", "a2a", "laya", "duel")
 # Default ramp between episode starts for concurrent runs, so a large --concurrency
 # doesn't hit the provider with N simultaneous first-requests. Auto-applied only when
 # concurrency > 1; override with --stagger, disable with --stagger 0.
@@ -71,6 +80,10 @@ def _write_dashboard_file(
     if not all_traces:
         typer.echo("no traces found", err=True)
         raise typer.Exit(1)
+    if any(t.mode == "duel" for t in all_traces):
+        return _write_duel_dashboard(
+            all_traces, scenarios, traces=traces, out=out, n_boot=n_boot, seed=seed
+        )
     html = build_dashboard(
         all_traces,
         scenarios,
@@ -84,6 +97,34 @@ def _write_dashboard_file(
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html, encoding="utf-8")
     return len(all_traces)
+
+
+def _write_duel_dashboard(
+    all_traces: list[Trace],
+    scenarios: dict[str, Scenario],
+    *,
+    traces: str,
+    out: str,
+    n_boot: int,
+    seed: int,
+) -> int:
+    """Write the model-duel dashboard (the compare template with duel sections)."""
+    from datetime import UTC, datetime
+
+    from rfq_bench.report.duel import build_duel, duel_payload, duel_traces, render_duel_html
+
+    duel = duel_traces(all_traces)
+    try:
+        result = build_duel(duel, scenarios, n_boot=n_boot, seed=seed)
+    except ValueError as exc:
+        typer.echo(f"duel dashboard not written: {exc}", err=True)
+        return 0
+    payload = duel_payload(result, duel, scenarios, source=traces)
+    payload["generated"] = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
+    out_path = Path(out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(render_duel_html(payload), encoding="utf-8")
+    return len(duel)
 
 
 def _csv(value: str | None, default: tuple[str, ...]) -> list[str]:
@@ -145,19 +186,42 @@ def _hms(seconds: float) -> str:
     return f"{s}s"
 
 
-def _print_cost_estimate(specs: list[EpisodeSpec], *, agent: str, max_rounds: int | None) -> None:
+def _print_cost_estimate(
+    specs: list[EpisodeSpec],
+    *,
+    agent: str,
+    max_rounds: int | None,
+    models: tuple[str, str] | None = None,
+) -> None:
     """Print the model-spend ceiling for LLM runs (see agent.cost_estimate).
 
     Uses the model set in .env / the environment. Never blocks the run: any
     failure prints "unavailable" and the run proceeds to the confirmation.
     """
-    if agent not in ("llm", "a2a"):
+    if agent not in ("llm", "a2a", "duel"):
         return
-    from rfq_bench.agent.cost_estimate import estimate_run_cost
+    from rfq_bench.agent.cost_estimate import estimate_run_cost, split_estimate
     from rfq_bench.agent.settings import AgentSettings
 
     try:
-        est = estimate_run_cost(specs, agent=agent, max_rounds=max_rounds, settings=AgentSettings())
+        if agent == "duel" and models is not None:
+            base = AgentSettings()
+            # Each model makes half the calls (one side per episode, both pairings).
+            est = split_estimate(
+                [
+                    estimate_run_cost(
+                        specs,
+                        agent="a2a",
+                        max_rounds=max_rounds,
+                        settings=base.model_copy(update={"model": m}),
+                    )
+                    for m in models
+                ]
+            )
+        else:
+            est = estimate_run_cost(
+                specs, agent=agent, max_rounds=max_rounds, settings=AgentSettings()
+            )
     except Exception as exc:  # an estimate must never block a run
         typer.echo(f"  cost estimate : unavailable ({type(exc).__name__}: {exc})")
         return
@@ -195,6 +259,79 @@ def _print_cost_estimate(specs: list[EpisodeSpec], *, agent: str, max_rounds: in
             )
 
 
+def _print_time_estimate(
+    specs: list[EpisodeSpec],
+    *,
+    agent: str,
+    max_rounds: int | None,
+    concurrency: int,
+    stagger: float,
+    models: tuple[str, str] | None = None,
+) -> None:
+    """Print the wall-clock estimate for model-calling runs (see agent.time_estimate).
+
+    History-based only; never blocks the run.
+    """
+    if agent not in ("llm", "a2a", "laya", "duel"):
+        return
+    from rfq_bench.agent.time_estimate import estimate_run_time, split_time_estimate
+
+    try:
+        if agent == "duel" and models is not None:
+            est = split_time_estimate(
+                [
+                    estimate_run_time(
+                        specs,
+                        agent="a2a",
+                        model=m,
+                        max_rounds=max_rounds,
+                        concurrency=concurrency,
+                        stagger_s=stagger,
+                    )
+                    for m in models
+                ]
+            )
+        else:
+            if agent == "laya":
+                from rfq_bench.agent.laya_settings import LayaSettings
+
+                model = LayaSettings().to_llm_config().model
+            else:
+                from rfq_bench.agent.settings import AgentSettings
+
+                model = AgentSettings().model
+            est = estimate_run_time(
+                specs,
+                agent=agent,
+                model=model,
+                max_rounds=max_rounds,
+                concurrency=concurrency,
+                stagger_s=stagger,
+            )
+    except Exception as exc:  # an estimate must never block a run
+        typer.echo(f"  time estimate : unavailable ({type(exc).__name__}: {exc})")
+        return
+    if est is None:
+        typer.echo("  time estimate : unavailable (no past runs in results/ to measure from)")
+        return
+    pad = " " * 18
+    if _hms(est.typical_s) == _hms(est.ceiling_s):
+        headline = (
+            f"up to {_hms(est.ceiling_s)} if every episode runs to its deadline "
+            f"(-j {concurrency}; no history for these scenarios to shorten it)"
+        )
+    else:
+        headline = (
+            f"~{_hms(est.typical_s)} typical, up to {_hms(est.ceiling_s)} "
+            f"if every episode runs to its deadline (-j {concurrency})"
+        )
+    typer.secho(f"  time estimate : {headline}", bold=True)
+    typer.echo(f"{pad}basis: {est.basis}")
+    if not est.same_model:
+        typer.echo(f"{pad}model speed varies widely — treat this as an order of magnitude")
+    typer.echo(f"{pad}re-asks, retries and rate limits come on top; live ETA shows once running")
+
+
 def _print_run_plan(
     specs: list[EpisodeSpec],
     *,
@@ -211,13 +348,27 @@ def _print_run_plan(
     stagger: float = 0.0,
     max_rounds: int | None = None,
     personas: list[str] | None = None,
+    models: tuple[str, str] | None = None,
+    pairings: str = "cross",
 ) -> None:
-    a2a = agent == "a2a"
+    duel = agent == "duel"
+    a2a = agent in ("a2a", "duel")
     typer.echo("Run plan")
     typer.echo(
         f"  agent         : {agent}"
-        + ("  (scored: LLM seller strategy; opponent: LLM buyer persona)" if a2a else "")
+        + (
+            "  (model duel: the MODEL is the treatment; each cell played once per pairing)"
+            if duel
+            else "  (scored: LLM seller strategy; opponent: LLM buyer persona)"
+            if a2a
+            else ""
+        )
     )
+    if duel and models is not None:
+        a, b = models
+        typer.echo(f"  models        : A = {a}  ·  B = {b}")
+        pairs = "A→B, B→A" + (", A→A, B→B (self-play)" if pairings == "full" else "")
+        typer.echo(f"  pairings      : {pairings}  (seller→buyer: {pairs})")
     if max_rounds is not None:
         typer.echo(f"  max-rounds    : {max_rounds} (capped; changes outcomes)")
     if concurrency > 1:
@@ -243,6 +394,7 @@ def _print_run_plan(
             * len(strategies)
             * len(first_speakers)
             * len(seeds)
+            * ((4 if pairings == "full" else 2) if duel else 1)
         )
     else:
         naive = (
@@ -265,7 +417,7 @@ def _print_run_plan(
         )
     if a2a:
         typer.secho(
-            "  note: --agent a2a makes TWO live API calls per round (buyer + seller); "
+            f"  note: --agent {agent} makes TWO live API calls per round (buyer + seller); "
             "cost roughly doubles vs --agent llm.",
             fg="yellow",
         )
@@ -292,13 +444,26 @@ def run(
     ),
     opponents: str | None = typer.Option(None, help="Comma-separated opponent subset."),
     personas: str | None = typer.Option(
-        None, help="Comma-separated buyer persona subset (--agent a2a only; default: all)."
+        None,
+        help="Comma-separated buyer persona subset (--agent a2a: default all; "
+        "--agent duel: default neutral).",
+    ),
+    models: str | None = typer.Option(
+        None,
+        help="--agent duel only: the two models, 'A,B' (OpenRouter-style ids on the "
+        "configured endpoint). Everything else (decoding, prompts, tool_choice) is shared.",
+    ),
+    pairings: str | None = typer.Option(
+        None,
+        help="--agent duel only: 'cross' (A sells to B, B sells to A; default) or 'full' "
+        "(plus both self-play pairs — separates seller from buyer skill, 2x cost).",
     ),
     seeds: str = typer.Option("0", help="Comma-separated integer seeds."),
     agent: str = typer.Option(
         "scripted",
-        help="Agent kind: 'scripted', 'llm' (LLM vs scripted), or 'a2a' "
-        "(LLM buyer persona vs LLM seller strategy).",
+        help="Agent kind: 'scripted', 'llm' (LLM vs scripted), 'a2a' "
+        "(LLM buyer persona vs LLM seller strategy), 'laya', or 'duel' "
+        "(two models against each other in both roles; needs --models).",
     ),
     roles: str | None = typer.Option(
         None,
@@ -390,6 +555,10 @@ def run(
         opponents = _csv_of(rc.opponents)
     if not _typed("personas") and rc.personas is not None:
         personas = _csv_of(rc.personas)
+    if not _typed("models") and rc.models is not None:
+        models = _csv_of(rc.models)
+    if not _typed("pairings") and rc.pairings is not None:
+        pairings = rc.pairings
     if not _typed("seeds") and rc.seeds is not None:
         seeds = _csv_of(rc.seeds) or seeds
     if not _typed("roles") and rc.roles is not None:
@@ -423,6 +592,26 @@ def run(
         out = _DEFAULT_A2A_OUT
     if agent == "laya" and not _typed("out") and rc.out is None:
         out = _DEFAULT_LAYA_OUT
+    if agent == "duel":
+        if not _typed("out") and rc.out is None:
+            out = _DEFAULT_DUEL_OUT
+        if not _typed("dashboard_out") and rc.dashboard_out is None:
+            dashboard_out = _DEFAULT_DUEL_DASHBOARD
+        # The model is the treatment: hold strategy and persona at their baselines
+        # unless the user asks for more.
+        strategies = strategies or "control"
+        personas = personas or "neutral"
+    duel_models: tuple[str, str] | None = None
+    pairing_mode = pairings or "cross"
+    if agent == "duel":
+        names = [m.strip() for m in (models or "").split(",") if m.strip()]
+        if len(names) != 2 or names[0] == names[1]:
+            raise typer.BadParameter("--agent duel needs --models A,B with two different models")
+        if pairing_mode not in ("cross", "full"):
+            raise typer.BadParameter("--pairings must be 'cross' or 'full'")
+        duel_models = (names[0], names[1])
+    elif models or pairings:
+        raise typer.BadParameter("--models/--pairings only apply to --agent duel")
     selected_scenarios = _select_scenarios(scenarios, load_scenarios(data))
     strat = _csv(strategies, STRATEGIES)
     opps = _csv(opponents, OPPONENTS)
@@ -431,7 +620,20 @@ def run(
     role_tuple = _roles(roles, ("buyer", "seller"), "roles")
     first_tuple = _roles(first_speakers, ("buyer", "seller"), "first-speakers")
 
-    if agent == "a2a":
+    if agent == "duel":
+        assert duel_models is not None
+        specs = list(
+            build_duel_matrix(
+                selected_scenarios,
+                models=duel_models,
+                pairings=pairing_mode,
+                personas=persona_list,
+                strategies=strat,
+                seeds=seed_list,
+                first_speakers=first_tuple,
+            )
+        )
+    elif agent == "a2a":
         specs = list(
             build_a2a_matrix(
                 selected_scenarios,
@@ -469,11 +671,21 @@ def run(
         concurrency=concurrency,
         stagger=stagger_s,
         max_rounds=max_rounds,
+        models=duel_models,
+        pairings=pairing_mode,
     )
     if not specs:
         typer.echo("Nothing to run with the current settings.", err=True)
         raise typer.Exit(1)
-    _print_cost_estimate(specs, agent=agent, max_rounds=max_rounds)
+    _print_cost_estimate(specs, agent=agent, max_rounds=max_rounds, models=duel_models)
+    _print_time_estimate(
+        specs,
+        agent=agent,
+        max_rounds=max_rounds,
+        concurrency=concurrency,
+        stagger=stagger_s,
+        models=duel_models,
+    )
     if not yes:
         typer.confirm(f"Run {len(specs)} episodes?", abort=True)
 
@@ -484,7 +696,8 @@ def run(
     agent_factory: Callable[[EpisodeSpec], Any] | None = None
     opponent_factory: Callable[[EpisodeSpec], Any] | None = None
     llm_config = None
-    if agent in ("llm", "a2a"):
+    llm_config_for: Callable[[EpisodeSpec], Any] | None = None
+    if agent in ("llm", "a2a", "duel"):
         from rfq_bench.agent.llm_client import LLMClient
         from rfq_bench.agent.negotiator import LLMNegotiator
         from rfq_bench.agent.settings import AgentSettings
@@ -498,7 +711,35 @@ def run(
         # Effective guidance = built-ins + any prompts/{strategies,personas}/*.md.
         strat_guidance = load_strategy_guidance()
         persona_guidance = load_persona_guidance()
-        if agent == "a2a":
+        if agent == "duel":
+            # One client per model; decoding, prompts and tool_choice are shared, so
+            # the model is the only thing that differs between pairings.
+            assert duel_models is not None
+            model_settings = {m: settings.model_copy(update={"model": m}) for m in duel_models}
+            clients = {m: LLMClient(ms) for m, ms in model_settings.items()}
+            configs = {m: ms.to_llm_config() for m, ms in model_settings.items()}
+            llm_config_for = lambda spec: configs[cast(str, spec.seller_model)]  # noqa: E731
+            agent_factory = lambda spec: LLMNegotiator(  # noqa: E731
+                spec.strategy,
+                clients[cast(str, spec.seller_model)],
+                behavior_kind="strategy",
+                strict=strict,
+                system_prompt=seller_prompt,
+                instruction=strategy_instruction(spec.strategy, strat_guidance),
+                max_reasks=settings.max_reasks,
+                message_channel=True,
+            )
+            opponent_factory = lambda spec: LLMNegotiator(  # noqa: E731
+                spec.persona or "neutral",
+                clients[cast(str, spec.buyer_model)],
+                behavior_kind="persona",
+                strict=strict,
+                system_prompt=buyer_prompt,
+                instruction=persona_instruction(spec.persona or "neutral", persona_guidance),
+                max_reasks=settings.max_reasks,
+                message_channel=True,
+            )
+        elif agent == "a2a":
             # Seller is the scored agent (its strategy is the treatment); the buyer
             # persona is the opponent/environment, on the standard opponent axis.
             agent_factory = lambda spec: LLMNegotiator(  # noqa: E731
@@ -579,7 +820,7 @@ def run(
             spec,
             agent_policy=policy,
             opponent_policy=opp,
-            llm_config=llm_config,
+            llm_config=llm_config_for(spec) if llm_config_for else llm_config,
             max_rounds=max_rounds,
         )
 
@@ -729,7 +970,11 @@ def _scoring_options_from_config(
 
     rc, dc = cfg.run, cfg.dashboard
     # Where `run` would have written the traces for this config.
-    agent_default = {"a2a": _DEFAULT_A2A_OUT, "laya": _DEFAULT_LAYA_OUT}.get(rc.agent or "")
+    agent_default = {
+        "a2a": _DEFAULT_A2A_OUT,
+        "laya": _DEFAULT_LAYA_OUT,
+        "duel": _DEFAULT_DUEL_OUT,
+    }.get(rc.agent or "")
     from_config: dict[str, Any] = {
         "traces": rc.out or agent_default,
         "data": rc.data,
@@ -787,6 +1032,18 @@ def report(
     if not all_traces:
         typer.echo("no traces found", err=True)
         raise typer.Exit(1)
+    duel_ts = [t for t in all_traces if t.mode == "duel"]
+    if duel_ts:
+        # A duel's treatment is the model, so the strategy table (which would pool
+        # the pairings) is replaced by the duel readout.
+        from rfq_bench.report.duel import build_duel
+
+        try:
+            typer.echo(build_duel(duel_ts, scenarios, n_boot=n_boot, seed=seed).render())
+        except ValueError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(1) from exc
+        return
     try:
         rep = build_report(
             all_traces,
@@ -829,6 +1086,74 @@ def report(
 
 
 @app.command()
+def compare(
+    traces_a: str = typer.Argument(..., help="JSONL trace file for run A (the baseline)."),
+    traces_b: str = typer.Argument(..., help="JSONL trace file for run B."),
+    data: str = typer.Option(_DEFAULT_DATA, help="Scenario dataset directory."),
+    label_a: str | None = typer.Option(None, help="Name for run A (default: its file name)."),
+    label_b: str | None = typer.Option(None, help="Name for run B (default: its file name)."),
+    n_boot: int = typer.Option(2000, help="Bootstrap resamples for CIs."),
+    seed: int = typer.Option(0, help="Bootstrap RNG seed (for reproducible CIs)."),
+    html: bool = typer.Option(
+        True, "--html/--no-html", help="Also write the self-contained compare dashboard."
+    ),
+    html_out: str | None = typer.Option(
+        None,
+        "--html-out",
+        help="Where to write the compare dashboard "
+        "(default: results/compare_<label-a>_vs_<label-b>.html).",
+    ),
+) -> None:
+    """Compare two runs of the same condition (e.g. two models) on matched cells.
+
+    Reports B − A in S_s points with a scenario-clustered CI, per strategy and per
+    opponent, plus the separate tracks side by side. Warns when anything other than
+    the model differs between the runs (mode, deadline, decoding config).
+    """
+    from rfq_bench.report.compare import compare_runs
+
+    scenarios = _scenario_index(load_scenarios(data))
+    a, b = list(read_traces(traces_a)), list(read_traces(traces_b))
+    for path, ts in ((traces_a, a), (traces_b, b)):
+        if not ts:
+            typer.echo(f"no traces found in {path}", err=True)
+            raise typer.Exit(1)
+    missing = sorted({t.scenario_id for t in a + b} - set(scenarios))
+    if missing:
+        typer.echo(
+            f"scenario(s) not in {data}: {', '.join(missing)} — pass the dataset with --data",
+            err=True,
+        )
+        raise typer.Exit(1)
+    result = compare_runs(
+        a,
+        b,
+        scenarios,
+        label_a=label_a or Path(traces_a).stem,
+        label_b=label_b or Path(traces_b).stem,
+        n_boot=n_boot,
+        seed=seed,
+    )
+    typer.echo(result.render())
+    if html:
+        from datetime import UTC, datetime
+
+        from rfq_bench.report.compare import comparison_payload, render_compare_html
+
+        payload = comparison_payload(result, source_a=traces_a, source_b=traces_b)
+        payload["generated"] = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
+        name_a, name_b = (
+            re.sub(r"[^A-Za-z0-9._-]+", "-", label).strip("-") or "run"
+            for label in (result.label_a, result.label_b)
+        )
+        dest = Path(html_out or f"results/compare_{name_a}_vs_{name_b}.html")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(render_compare_html(payload), encoding="utf-8")
+        typer.echo("")
+        typer.echo(f"wrote compare dashboard to {dest}")
+
+
+@app.command()
 def dashboard(
     ctx: typer.Context,
     config: str | None = typer.Option(None, "--config", "-c", help=_SCORING_CONFIG_HELP),
@@ -857,6 +1182,8 @@ def dashboard(
         seed=seed,
     )
     n = _write_dashboard_file(**opts)
+    if n == 0:
+        raise typer.Exit(1)
     typer.echo(f"wrote dashboard for {n} episodes to {opts['out']}")
 
 
@@ -923,6 +1250,7 @@ def doctor(
     typer.echo(f"model         : {settings.model}")
     typer.echo(f"base_url      : {settings.base_url}")
     typer.echo(f"strict_tool   : {settings.strict_tool}")
+    typer.echo(f"tool_choice   : {settings.tool_choice}")
     first_line = system_prompt.splitlines()[0][:70]
     typer.echo(f"system prompt : {len(system_prompt)} chars (first line: {first_line}…)")
     typer.echo("calling the endpoint with the submit_move tool …")

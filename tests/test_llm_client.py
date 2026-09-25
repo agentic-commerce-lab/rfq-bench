@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from rfq_bench.agent.llm_client import _extract_cost, _parse_tool_call
 
 
@@ -80,8 +82,10 @@ class _FakeCreate:
     def __init__(self, outcomes: list) -> None:
         self._outcomes = list(outcomes)
         self.calls = 0
+        self.kwargs: dict = {}
 
     def __call__(self, **kwargs):
+        self.kwargs = kwargs
         out = self._outcomes[min(self.calls, len(self._outcomes) - 1)]
         self.calls += 1
         if isinstance(out, BaseException):
@@ -89,11 +93,15 @@ class _FakeCreate:
         return out
 
 
-def _client(outcomes: list, *, retries: int = 3):
+def _client(outcomes: list, *, retries: int = 3, tool_choice: str = "forced"):
     from rfq_bench.agent.llm_client import LLMClient
     from rfq_bench.agent.settings import AgentSettings
 
-    settings = AgentSettings(RFQ_BENCH_TRANSIENT_RETRIES=retries, RFQ_BENCH_TRANSIENT_BACKOFF=1.0)
+    settings = AgentSettings(
+        RFQ_BENCH_TRANSIENT_RETRIES=retries,
+        RFQ_BENCH_TRANSIENT_BACKOFF=1.0,
+        RFQ_BENCH_TOOL_CHOICE=tool_choice,
+    )
     c = LLMClient(settings)
     create = _FakeCreate(outcomes)
     # Bypass _ensure() by pre-seeding a fake OpenAI-compatible client.
@@ -231,3 +239,40 @@ def test_cached_tokens_accumulate_across_transient_retries() -> None:
     c, _ = _client([first, ok])
     out = c.complete("sys", "user", _TOOL)
     assert out.prompt_tokens == 200 and out.cached_tokens == 170
+
+
+def test_tool_choice_forced_names_the_function_by_default() -> None:
+    c, create = _client([_ok()])
+    c.complete("sys", "user", _TOOL)
+    assert create.kwargs["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "submit_move"},
+    }
+
+
+def test_tool_choice_auto_is_forwarded_and_recorded() -> None:
+    c, create = _client([_ok()], tool_choice="auto")
+    c.complete("sys", "user", _TOOL)
+    assert create.kwargs["tool_choice"] == "auto"
+    assert c._settings.to_llm_config().tool_choice == "auto"
+
+
+class _BadRequest(Exception):
+    status_code = 400
+
+
+def test_tool_choice_rejection_fails_fast_with_hint() -> None:
+    err = _BadRequest('tool_choice: type "tool" and "any" are not supported for this model.')
+    c, create = _client([err])
+    with pytest.raises(RuntimeError, match="RFQ_BENCH_TOOL_CHOICE=auto"):
+        c.complete("sys", "user", _TOOL)
+    assert create.calls == 1 and c.delays == []
+
+
+def test_legacy_llm_config_defaults_to_forced() -> None:
+    from rfq_bench.core.contracts import LLMConfig
+
+    cfg = LLMConfig.model_validate(
+        {"base_url": "u", "model": "m", "temperature": 0.0, "max_tokens": 1}
+    )
+    assert cfg.tool_choice == "forced"

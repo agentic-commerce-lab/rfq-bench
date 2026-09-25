@@ -161,6 +161,7 @@ def _episode_payload(trace: Trace, scenario: Scenario) -> dict[str, Any]:
         "first_speaker": trace.first_speaker,
         "seed": trace.seed,
         "model": trace.llm_config.model,
+        "models_by_role": dict(trace.models_by_role),
         "mode": trace.mode,
         "q": scored.q,
         "degenerate": scored.degenerate,
@@ -271,6 +272,25 @@ def _glossary(episodes: list[dict[str, Any]], used: list[Scenario]) -> dict[str,
     )
 
 
+_REPLAY_CSS_PLACEHOLDER = "/* __REPLAY_CSS__ */"
+_REPLAY_JS_PLACEHOLDER = "/* __REPLAY_JS__ */"
+
+
+def inline_replay(html: str) -> str:
+    """Inline the shared negotiation-replay CSS/JS (also used by the duel page)."""
+    css = (_TEMPLATE_DIR / "replay.css").read_text(encoding="utf-8")
+    js = (_TEMPLATE_DIR / "replay.js").read_text(encoding="utf-8")
+    return html.replace(_REPLAY_CSS_PLACEHOLDER, css).replace(_REPLAY_JS_PLACEHOLDER, js)
+
+
+def uplot_assets() -> tuple[str, str]:
+    """The vendored uPlot (css, js)."""
+    return (
+        (_TEMPLATE_DIR / "vendor" / "uPlot.min.css").read_text(encoding="utf-8"),
+        (_TEMPLATE_DIR / "vendor" / "uPlot.iife.min.js").read_text(encoding="utf-8"),
+    )
+
+
 def render_html(payload: dict[str, Any]) -> str:
     """Inline the payload and the vendored uPlot assets into the template."""
     template = (_TEMPLATE_DIR / "dashboard.html").read_text(encoding="utf-8")
@@ -280,6 +300,7 @@ def render_html(payload: dict[str, Any]) -> str:
     blob = json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
     html = template.replace(_UPLOT_CSS_PLACEHOLDER, uplot_css)
     html = html.replace(_UPLOT_JS_PLACEHOLDER, uplot_js)
+    html = inline_replay(html)
     html = html.replace(_DATA_PLACEHOLDER, blob)
     return html
 
