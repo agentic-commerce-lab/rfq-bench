@@ -109,7 +109,7 @@ This is faithful: it is still the model's own decision, merely re-elicited under
 - **Bounded and recorded.** Cap at `N`; write `reask_count` and the reason onto the trace so the
   effort is auditable. A model that needs 2 re-asks every turn is a finding, not a free pass.
 - **Determinism note.** A re-ask is a second stream; like temperature and multi-stream A2A, it
-  weakens byte-identical replay (already an offline-only guarantee — see README). Record it so
+  weakens byte-identical replay (already an offline-only guarantee — see [Reproducibility](reproducibility.md)). Record it so
   replays are explainable.
 - **Scope.** Applies to both sides symmetrically (`LLMNegotiator` is shared), so buyer and seller
   get the same treatment and `q` stays comparable.

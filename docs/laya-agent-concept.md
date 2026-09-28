@@ -1,8 +1,10 @@
 # Concept: a Laya decision-model agent for rfq-bench
 
-**Status:** concept / design (no code yet). **Date:** 2026-09-21.
-**Author:** l.rump. **Depends on:** the `laya-integration` skill (brain function collapse),
-Laya by Convai Innovations (Apache-2.0).
+**Status:** implemented as the experimental `--agent laya` (see
+[conditions](conditions.md#laya-decision-agent---agent-laya-experimental)); the cascade
+and the alternative move designs are still design. **Date:** 2026-09-21.
+**Author:** l.rump. **Depends on:** a Laya server (Laya by Convai Innovations,
+Apache-2.0), which is not part of this repository.
 
 ## 1. Why
 
@@ -204,7 +206,7 @@ Report the measured numbers and the escalation rate, not "it works" (the skill's
 5. Calibration/eval utilities: decision-accuracy & ECE vs ground truth; temperature fit.
 6. `--agent cascade` + escalation-rate reporting.
 7. Designs B/C behind a switch, measured against A.
-8. Docs: README "Laya decision agent" section; AGENTS.md scope note (new versioned condition).
+8. Docs: the Laya section of `docs/conditions.md`; AGENTS.md scope note (new versioned condition).
 
 ## 10. Open questions for the user
 

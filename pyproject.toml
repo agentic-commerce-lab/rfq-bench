@@ -1,11 +1,21 @@
 [project]
 name = "rfq-bench"
 version = "0.1.0"
-description = "A reproducible within-agent negotiation benchmark for buyer/seller language agents in e-commerce."
+description = "A reproducible benchmark for AI agents that negotiate B2B deals: strategies, self-play and model duels, scored on immutable traces."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Lukas Rump", email = "l.rump@shopware.com" }]
+maintainers = [{ name = "Shopware AG" }]
+keywords = ["negotiation", "benchmark", "llm", "agents", "e-commerce", "b2b", "negmas"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     # NegMAS is the negotiation engine: SAOMechanism, protocol, deadlines, lifecycle.
     "negmas>=0.16.0",
@@ -15,6 +25,11 @@ dependencies = [
     "numpy>=1.26",
     "typer>=0.12",
 ]
+
+[project.urls]
+Homepage = "https://github.com/agentic-commerce-lab/rfq-bench"
+Documentation = "https://github.com/agentic-commerce-lab/rfq-bench/tree/main/docs"
+Issues = "https://github.com/agentic-commerce-lab/rfq-bench/issues"
 
 [project.scripts]
 rfq-bench = "rfq_bench.cli:app"

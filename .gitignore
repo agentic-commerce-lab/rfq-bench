@@ -20,3 +20,6 @@ results/
 docs/linkedin-post/
 docs/linkedin-assets/
 docs/linkedin-post-model-duels.md
+
+# Archived run traces (local only; see data/runs/README.md)
+data/runs/*/

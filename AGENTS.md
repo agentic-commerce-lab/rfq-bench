@@ -76,7 +76,7 @@ Two milestones are in scope. Do not build beyond them without being asked.
   `LLMNegotiator`, the seller strategies, the pure scorer, and the report/dashboard
   unchanged. The buyer persona is prompt-level disposition only (fixed economics), so
   it touches no frozen offline dimension and the v0.1 offline suite stays immutable.
-  See README "A2A self-play". Cross-play is the separate `--agent duel` condition
+  See `docs/conditions.md`. Cross-play is the separate `--agent duel` condition
   (below); additional model families remain out of scope.
 
 - **Laya decision agent (implemented).** `--agent laya`: a local, non-generative
@@ -107,7 +107,7 @@ Two milestones are in scope. Do not build beyond them without being asked.
   role × first speaker), reports `S_B − S_A` with a scenario-clustered CI, and warns
   on any non-model condition difference. It is a between-run readout, **not** the
   within-agent strategy effect Δ_s, and never pools runs. It adds no runner, model
-  family, or condition. See README "Comparing two runs".
+  family, or condition. See `docs/reports-and-dashboards.md`.
 
 **Out of scope now (design for, do not implement):** `ShopRunner` / Shopware quote
 adapter, the Laya cascade (`--agent cascade`) and the alternative Laya
@@ -153,36 +153,43 @@ Add the CLI as a project script in `pyproject.toml` (`[project.scripts] rfq-benc
 
 ```
 rfq-bench/
-├── AGENTS.md
-├── README.md
-├── pyproject.toml
-├── uv.lock
-├── .env.example                 # OPENAI_BASE_URL, OPENAI_API_KEY, MODEL, etc.
+├── AGENTS.md                     # this build guide + scientific contract
+├── README.md  CONTRIBUTING.md  LICENSE  THIRD_PARTY_NOTICES.md
+├── pyproject.toml  uv.lock
+├── .env.example                  # endpoint, key, model; decoding defaults (pin in [llm])
+├── .github/workflows/ci.yml      # ruff, mypy, pytest -m "not llm"
 ├── src/rfq_bench/
-│   ├── __init__.py
-│   ├── cli.py                    # `rfq-bench run|score|report`
-│   ├── core/                     # SHARED CORE — offline and (future) shop reuse this
-│   │   ├── contracts.py          # pydantic schemas: Scenario, Issue, Outcome, Trace…
+│   ├── cli.py                    # `rfq-bench run|report|dashboard|compare|list|doctor|config`
+│   ├── config.py                 # TOML configs: [run], [llm], [dashboard]
+│   ├── provenance.py             # code version, run start, fingerprints of model-visible text
+│   ├── store.py                  # append-only JSONL trace reader/writer
+│   ├── core/                     # SHARED CORE — pure, deterministic, no engine/network
+│   │   ├── contracts.py          # pydantic schemas: Scenario, Issue, Step, Trace, LLMConfig…
 │   │   ├── outcome_space.py      # closed issue set, legal values, versioned
 │   │   ├── utility.py            # utility fns, BATNA / reservation value, ideal point
 │   │   ├── zopa.py               # ZOPA + degeneracy detection
 │   │   └── scoring.py            # q_i,e, S_s, Δ_s — pure functions over immutable traces
-│   ├── strategies/               # the ONLY treatment
-│   │   ├── base.py               # StrategyPolicy protocol
-│   │   ├── control.py boulware.py linear.py conceder.py
-│   │   ├── tit_for_tat.py anchoring.py logrolling.py
-│   ├── opponents/                # deterministic, seeded scripted policies
-│   │   ├── base.py hardliner.py fast_conceder.py reciprocal.py integrative.py
+│   ├── strategies/               # the treatment: base.py (policy protocol), registry.py
+│   ├── opponents/                # scripted opponents: registry.py
 │   ├── agent/
-│   │   ├── negotiator.py         # NegMAS SAONegotiator adapter wrapping the LLM
 │   │   ├── llm_client.py         # OpenAI-compatible client, configurable base URL
-│   │   └── prompts.py            # FROZEN role prompt + action-schema instructions
+│   │   ├── negotiator.py         # LLM negotiator: one validated move per turn, re-asks
+│   │   ├── prompts.py framing.py prompt_templates/   # FROZEN prompt, payload, tool schema
+│   │   ├── personas.py settings.py
+│   │   ├── cost_estimate.py time_estimate.py         # pre-run estimates
+│   │   └── laya_*.py             # experimental Laya agent (needs an external server)
 │   ├── runners/
-│   │   ├── offline.py            # OfflineRunner: run the matrix, assemble the trace
+│   │   ├── offline.py            # episode runner + matrix builders (offline, a2a, duel)
 │   │   └── negmas_engine.py      # NegMAS bindings: outcome space, ufuns, PolicyNegotiator
-│   ├── datasets/                 # scenario loaders (JSON/CSV) + validators
-│   └── report/                   # aggregation, CIs clustered by scenario, tables
-├── data/scenarios/               # committed scenario datasets (immutable anchor sets)
+│   ├── datasets/loader.py        # scenario loaders + validators
+│   └── report/                   # aggregate, metrics, fidelity, compare, duel, dashboards
+│       └── templates/            # dashboard, compare, duel pages; shared replay.js/.css
+├── configs/                      # ready-made run configs (offline, a2a, duel, laya)
+├── data/scenarios/               # v0.1 anchor set (immutable)
+├── data/scenarios_price/         # price-only suite (immutable)
+├── data/runs/                    # local run archive (git-ignored except README.md)
+├── docs/                         # user docs (getting started, methodology, …) + design notes
+├── prompts/                      # markdown overrides: system prompt, strategies, personas
 ├── results/                      # run outputs (git-ignored); traces are immutable once written
 └── tests/
 ```
@@ -303,7 +310,8 @@ compute `q_i,e`, then `S_s`, then `Δ_s` vs. control, with scenario-clustered CI
   fingerprints of each model-visible text: system prompt per role, instruction per
   arm, move tool schema) and each LLM step its serving `provider`. Compare/duel warn
   when fingerprints differ. Pin decoding in the config's `[llm]` table, not `.env`.
-  Keepable runs are archived under `data/runs/` (results/ is git-ignored).
+  Keepable runs are archived locally under `data/runs/` with a manifest (both `results/`
+  and the run folders are git-ignored).
 - **Traces are immutable.** Writing a trace is append-only; never mutate `results/`
   outputs. Re-scoring reads traces, it does not re-run them.
 - **No leakage:** private economics (values, costs, BATNAs, margins, approval limits)
@@ -313,7 +321,7 @@ compute `q_i,e`, then `S_s`, then `Δ_s` vs. control, with scenario-clustered CI
   label.
 - Any change to a frozen dimension = a new versioned condition, not an edit.
 
-### Known limitations (keep honest; see README "Limitations & known drawbacks")
+### Known limitations (keep honest; see `docs/limitations.md`)
 
 - **Scope of the score:** `S_s`/`q` measure only value-capture-above-BATNA — never
   fairness, joint surplus, safety, speed, or cost. A high `S_s` may be opponent
